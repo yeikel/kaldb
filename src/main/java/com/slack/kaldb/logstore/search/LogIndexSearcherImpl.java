@@ -26,19 +26,10 @@ import org.apache.lucene.document.LongPoint;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.queryparser.classic.ParseException;
 import org.apache.lucene.queryparser.classic.QueryParser;
+import org.apache.lucene.search.*;
 import org.apache.lucene.search.BooleanClause.Occur;
 import org.apache.lucene.search.BooleanQuery.Builder;
-import org.apache.lucene.search.Collector;
-import org.apache.lucene.search.IndexSearcher;
-import org.apache.lucene.search.MultiCollector;
-import org.apache.lucene.search.Query;
-import org.apache.lucene.search.ScoreDoc;
-import org.apache.lucene.search.SearcherManager;
-import org.apache.lucene.search.Sort;
-import org.apache.lucene.search.SortField;
 import org.apache.lucene.search.SortField.Type;
-import org.apache.lucene.search.TermQuery;
-import org.apache.lucene.search.TopFieldCollector;
 import org.apache.lucene.store.NIOFSDirectory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -98,6 +89,14 @@ public class LogIndexSearcherImpl implements LogIndexSearcher<LogMessage> {
             buildStatsCollector(bucketCount, startTimeMsEpoch, endTimeMsEpoch);
         Collector collectorChain = MultiCollector.wrap(topFieldCollector, statsCollector);
 
+        TopScoreDocCollector topScoreDocs = TopScoreDocCollector.create(10, 1000);
+        searcher.search(new MatchAllDocsQuery(), topScoreDocs);
+        TopDocs topDocs = topScoreDocs.topDocs();
+        LOG.info("VARUN:: totalDocs=" + topDocs.totalHits);
+        LOG.info("VARUN:: scoreDocs length=" + topDocs.scoreDocs.length);
+        if (topDocs.scoreDocs.length > 0) {
+          LOG.info("VARUN:: scoreDocs1=" + searcher.doc(topDocs.scoreDocs[0].doc));
+        }
         searcher.search(query, collectorChain);
         List<LogMessage> results;
         if (howMany > 0) {
