@@ -87,6 +87,11 @@
                 </exclusion>
             </exclusions>
         </dependency>
+        <dependency>
+            <groupId>com.linecorp.armeria</groupId>
+            <artifactId>armeria-testing-junit4</artifactId>
+            <version>0.99.7</version>
+        </dependency>
 
         <!-- Apache curator dependencies -->
         <dependency>

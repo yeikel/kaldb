@@ -9,6 +9,7 @@ message KaldbConfig {
     S3Config s3Config = 2;
     IndexerConfig indexerConfig = 3;
     int32 serverPort = 4;
+    string nodeRole = 5;
 }
 
 message KafkaConfig {
@@ -19,6 +20,7 @@ message KafkaConfig {
     string enableKafkaAutoCommit = 5;
     string kafkaAutoCommitInterval = 6;
     string kafkaSessionTimeout = 7;
+    string _useTestKafka = 8;
 }
 
 message S3Config {

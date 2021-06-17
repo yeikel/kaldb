@@ -4,6 +4,8 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.util.JsonFormat;
 import com.slack.kaldb.proto.config.KaldbConfigs;
+import com.slack.kaldb.server.Kaldb;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -22,7 +24,14 @@ public class KaldbConfig {
       throws InvalidProtocolBufferException {
     KaldbConfigs.KaldbConfig.Builder kaldbConfigBuilder = KaldbConfigs.KaldbConfig.newBuilder();
     JsonFormat.parser().ignoringUnknownFields().merge(jsonStr, kaldbConfigBuilder);
+    addDefaults(kaldbConfigBuilder);
     return kaldbConfigBuilder.build();
+  }
+
+  private static void addDefaults(KaldbConfigs.KaldbConfig.Builder kaldbConfigBuilder) {
+    if (kaldbConfigBuilder.getNodeRole().isEmpty()) {
+      kaldbConfigBuilder.setNodeRole(Kaldb.INDEX_NODE_ROLE);
+    }
   }
 
   @VisibleForTesting

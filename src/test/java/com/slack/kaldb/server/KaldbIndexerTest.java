@@ -2,6 +2,7 @@ package com.slack.kaldb.server;
 
 import static com.slack.kaldb.logstore.LuceneIndexStoreImpl.MESSAGES_FAILED_COUNTER;
 import static com.slack.kaldb.logstore.LuceneIndexStoreImpl.MESSAGES_RECEIVED_COUNTER;
+import static com.slack.kaldb.testlib.KaldbConfigUtil.makeKaldbConfig;
 import static com.slack.kaldb.testlib.MetricsUtil.getCount;
 import static com.slack.kaldb.testlib.TestKafkaServer.produceMessagesToKafka;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -81,40 +82,6 @@ public class KaldbIndexerTest {
 
   // TODO: Add a test to ensure Indexer can be shut down cleanly.
 
-  private KaldbConfigs.KaldbConfig makeKaldbConfig(String bootstrapServers) {
-    KaldbConfigs.KafkaConfig kafkaConfig =
-        KaldbConfigs.KafkaConfig.newBuilder()
-            .setKafkaTopic(TEST_KAFKA_TOPIC)
-            .setKafkaTopicPartition(String.valueOf(TEST_KAFKA_PARTITION))
-            .setKafkaBootStrapServers(bootstrapServers)
-            .setKafkaClientGroup(KALDB_TEST_CLIENT)
-            .setEnableKafkaAutoCommit("true")
-            .setKafkaAutoCommitInterval("5000")
-            .setKafkaSessionTimeout("5000")
-            .build();
-
-    KaldbConfigs.S3Config s3Config =
-        KaldbConfigs.S3Config.newBuilder()
-            .setS3Bucket(TEST_S3_BUCKET)
-            .setS3Region("us-east-1")
-            .build();
-
-    KaldbConfigs.IndexerConfig indexerConfig =
-        KaldbConfigs.IndexerConfig.newBuilder()
-            .setMaxBytesPerChunk(10L * 1024 * 1024 * 1024)
-            .setMaxMessagesPerChunk(100)
-            .setCommitDurationSecs(10)
-            .setRefreshDurationSecs(10)
-            .setStaleDurationSecs(7200)
-            .build();
-
-    return KaldbConfigs.KaldbConfig.newBuilder()
-        .setKafkaConfig(kafkaConfig)
-        .setS3Config(s3Config)
-        .setIndexerConfig(indexerConfig)
-        .build();
-  }
-
   private String uri() {
     return "gproto+http://127.0.0.1:" + server.activeLocalPort() + '/';
   }
@@ -144,29 +111,31 @@ public class KaldbIndexerTest {
     final LocalDateTime startTime = LocalDateTime.of(2020, 10, 1, 10, 10, 0);
 
     // Initialize kaldb config.
-    KaldbConfigs.KaldbConfig kaldbCfg = makeKaldbConfig("localhost:" + broker.getKafkaPort().get());
+    KaldbConfigs.KaldbConfig kaldbCfg = makeKaldbConfig("localhost:" + broker.getKafkaPort().get(), 8081, TEST_KAFKA_TOPIC, TEST_KAFKA_PARTITION, KALDB_TEST_CLIENT, TEST_S3_BUCKET);
     KaldbConfig.initFromConfigObject(kaldbCfg);
 
     // Create an indexer, an armeria server and register the grpc service.
     ServerBuilder sb = Server.builder();
-    sb.http(0);
+    sb.http(KaldbConfig.get().getServerPort());
     sb.service("/ping", (ctx, req) -> HttpResponse.of("pong!"));
     KaldbIndexer indexer =
         new KaldbIndexer(
             chunkManager, KaldbIndexer.dataTransformerMap.get("api_log"), metricsRegistry);
     GrpcServiceBuilder searchBuilder =
         GrpcService.builder()
-            .addService(new KaldbLocalSearcher<>(indexer.getChunkManager()))
+            .addService(new QueryService<>())
             .enableUnframedRequests(true);
     server = sb.service(searchBuilder.build()).build();
     server.start().join();
+
+    server.toString();
 
     indexer.start();
     Thread.sleep(1000); // Wait for consumer start.
 
     // Produce messages to kafka, so the indexer can consume them.
     produceMessagesToKafka(broker, startTime);
-    Thread.sleep(1000); // Wait for consumer to finish consumption and roll over chunk.
+    Thread.sleep(5000); // Wait for consumer to finish consumption and roll over chunk.
 
     // No need to commit the active chunk since the last chunk is already closed.
     assertThat(chunkManager.getChunkMap().size()).isEqualTo(1);
