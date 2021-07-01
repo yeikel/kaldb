@@ -97,6 +97,163 @@ public class CachedMetadataStoreImplTest {
   }
 
   @SuppressWarnings("OptionalGetWithoutIsPresent")
+  // Let's say we add a new server to the cluster. There will be data in ZK already. Ensure we can
+  // still read those and not just future events
+  @Test
+  public void testAfterInitialized() throws Exception {
+    String root = "/root";
+    assertThat(metadataStore.create(root, "", true).get()).isNull();
+
+    String path1 = "/root/1";
+    SnapshotMetadata snapshot1 = makeSnapshot("test1");
+    assertThat(metadataStore.create(path1, serDe.toJsonStr(snapshot1), true).get()).isNull();
+
+    String path12 = "/root/1/2";
+    SnapshotMetadata snapshot12 = makeSnapshot("test12");
+    assertThat(metadataStore.create(path12, serDe.toJsonStr(snapshot12), true).get()).isNull();
+
+    CachedMetadataStore<SnapshotMetadata> cache = makeCachedStore("/root", null, serDe);
+    assertThat(((CachedMetadataStoreImpl<SnapshotMetadata>) cache).isStarted()).isTrue();
+
+    assertThat(cache.getInstances()).contains(snapshot1, snapshot12);
+  }
+
+  @Test
+  public void testDataChanges() throws Exception {
+    String root = "/root";
+    assertThat(metadataStore.create(root, "", true).get()).isNull();
+    CountingCachedMetadataListener listener = new CountingCachedMetadataListener();
+    CachedMetadataStore<SnapshotMetadata> cache = makeCachedStore("/root", listener, serDe);
+    assertThat(((CachedMetadataStoreImpl<SnapshotMetadata>) cache).isStarted()).isTrue();
+
+    String path1 = "/root/A1";
+    SnapshotMetadata snapshot1 = makeSnapshot("A1");
+    assertThat(metadataStore.create(path1, serDe.toJsonStr(snapshot1), true).get()).isNull();
+    await().untilAsserted(() -> assertThat(cache.getInstances().size()).isSameAs(1));
+    assertThat(metadataStore.get(path1).get()).isEqualTo(serDe.toJsonStr(snapshot1));
+    assertThat(cache.getInstances()).contains(snapshot1);
+    assertThat(listener.getCacheChangedCounter()).isEqualTo(1);
+    assertThat(listener.getStateChangedCounter()).isEqualTo(0);
+
+    snapshot1 = makeSnapshot("A2");
+    assertThat(metadataStore.put(path1, serDe.toJsonStr(snapshot1)).get()).isNull();
+    await().untilAsserted(() -> assertThat(cache.getInstances().size()).isSameAs(1));
+    assertThat(metadataStore.get(path1).get()).isEqualTo(serDe.toJsonStr(snapshot1));
+    assertThat(cache.getInstances()).contains(snapshot1);
+    assertThat(listener.getCacheChangedCounter()).isEqualTo(2);
+    assertThat(listener.getStateChangedCounter()).isEqualTo(0);
+  }
+
+  @Test
+  public void testOnClientDisconnectAndReconnect() throws Exception {
+    String root = "/root";
+    assertThat(metadataStore.create(root, "", true).get()).isNull();
+    CountingCachedMetadataListener listener = new CountingCachedMetadataListener();
+    CachedMetadataStore<SnapshotMetadata> cache = makeCachedStore("/root", listener, serDe);
+    assertThat(((CachedMetadataStoreImpl<SnapshotMetadata>) cache).isStarted()).isTrue();
+
+    String path1 = "/root/A1";
+    SnapshotMetadata snapshot1 = makeSnapshot("A1");
+    assertThat(metadataStore.create(path1, serDe.toJsonStr(snapshot1), true).get()).isNull();
+    await().untilAsserted(() -> assertThat(cache.getInstances().size()).isSameAs(1));
+    assertThat(metadataStore.get(path1).get()).isEqualTo(serDe.toJsonStr(snapshot1));
+    assertThat(cache.getInstances()).contains(snapshot1);
+    assertThat(listener.getCacheChangedCounter()).isEqualTo(1);
+    assertThat(listener.getStateChangedCounter()).isEqualTo(0);
+
+    String path2 = "/root/A1/B1";
+    SnapshotMetadata snapshot2 = makeSnapshot("A1_B1");
+    assertThat(metadataStore.create(path2, serDe.toJsonStr(snapshot2), true).get()).isNull();
+    await().untilAsserted(() -> assertThat(cache.getInstances().size()).isSameAs(2));
+    assertThat(metadataStore.get(path2).get()).isEqualTo(serDe.toJsonStr(snapshot2));
+    assertThat(cache.getInstances()).contains(snapshot1, snapshot2);
+    assertThat(listener.getCacheChangedCounter()).isEqualTo(2);
+    assertThat(listener.getStateChangedCounter()).isEqualTo(0);
+
+    String path3 = "/root/A1/B1/C1";
+    SnapshotMetadata snapshot3 = makeSnapshot("A1_B1_C1");
+    assertThat(metadataStore.create(path3, serDe.toJsonStr(snapshot3), true).get()).isNull();
+    await().untilAsserted(() -> assertThat(cache.getInstances().size()).isSameAs(3));
+    assertThat(metadataStore.get(path3).get()).isEqualTo(serDe.toJsonStr(snapshot3));
+    assertThat(cache.getInstances()).contains(snapshot1, snapshot2, snapshot3);
+    assertThat(listener.getCacheChangedCounter()).isEqualTo(3);
+    assertThat(listener.getStateChangedCounter()).isEqualTo(0);
+
+    String path4 = "/root/A2";
+    SnapshotMetadata snapshot4 = makeSnapshot("A2");
+    assertThat(metadataStore.create(path4, serDe.toJsonStr(snapshot4), true).get()).isNull();
+    await().untilAsserted(() -> assertThat(cache.getInstances().size()).isSameAs(4));
+    assertThat(metadataStore.get(path4).get()).isEqualTo(serDe.toJsonStr(snapshot4));
+    assertThat(cache.getInstances()).contains(snapshot1, snapshot2, snapshot3, snapshot4);
+    assertThat(listener.getCacheChangedCounter()).isEqualTo(4);
+    assertThat(listener.getStateChangedCounter()).isEqualTo(0);
+
+    metadataStore.close();
+
+    // I hate the fact that the cache doesn't store the full path
+    assertThat(cache.getInstances().size()).isSameAs(4);
+    assertThat(cache.get("A1").get()).isEqualTo(snapshot1);
+    assertThat(cache.get("B1").get()).isEqualTo(snapshot2);
+    assertThat(cache.get("C1").get()).isEqualTo(snapshot3);
+    assertThat(cache.get("A2").get()).isEqualTo(snapshot4);
+    assertThat(cache.getInstances()).contains(snapshot1, snapshot2, snapshot3, snapshot4);
+
+    // metadataStore1 is another client that is writing to ZK where one is undergoing a network partition scenario
+
+    SimpleMeterRegistry meterRegistry1 = new SimpleMeterRegistry();
+    CountingFatalErrorHandler countingFatalErrorHandler1 = new CountingFatalErrorHandler();
+    ZookeeperMetadataStoreImpl metadataStore1 = new ZookeeperMetadataStoreImpl(
+        testingServer.getConnectString(),
+        "test",
+        1000,
+        1000,
+        new RetryNTimes(1, 500),
+        countingFatalErrorHandler1,
+        meterRegistry1);
+
+    CachedMetadataStore<SnapshotMetadata> cachedMetadataStore1 =
+        new CachedMetadataStoreImpl<>(
+            "/root",
+            new SnapshotMetadataSerializer(),
+            metadataStore1.getCurator(),
+            metadataStore1.getMetadataExecutorService());
+    cachedMetadataStore1.start();
+
+    assertThat(cachedMetadataStore1.getInstances()).contains(snapshot1, snapshot2, snapshot3, snapshot4);
+
+    metadataStore1.delete(path3);
+    await().untilAsserted(() -> assertThat(cachedMetadataStore1.getInstances().size()).isSameAs(3));
+    assertThat(cachedMetadataStore1.getInstances()).contains(snapshot1, snapshot2, snapshot4);
+
+    String path5 = "/root/A1/B1/C2";
+    SnapshotMetadata snapshot5 = makeSnapshot("A1_B1_C2");
+    assertThat(metadataStore1.create(path5, serDe.toJsonStr(snapshot5), true).get()).isNull();
+    await().untilAsserted(() -> assertThat(cachedMetadataStore1.getInstances().size()).isSameAs(4));
+    assertThat(metadataStore1.get(path5).get()).isEqualTo(serDe.toJsonStr(snapshot5));
+    assertThat(cachedMetadataStore1.getInstances()).contains(snapshot1, snapshot2, snapshot4, snapshot5);
+
+    CountingFatalErrorHandler countingFatalErrorHandler = new CountingFatalErrorHandler();
+    metadataStore = new ZookeeperMetadataStoreImpl(
+        testingServer.getConnectString(),
+        "test",
+        1000,
+        1000,
+        new RetryNTimes(1, 500),
+        countingFatalErrorHandler,
+        meterRegistry);
+    assertThat(metadataStore.get(path1).get()).isEqualTo(serDe.toJsonStr(snapshot1));
+    assertThat(metadataStore.get(path2).get()).isEqualTo(serDe.toJsonStr(snapshot2));
+    assertThat(metadataStore.get(path4).get()).isEqualTo(serDe.toJsonStr(snapshot4));
+    assertThat(metadataStore.get(path5).get()).isEqualTo(serDe.toJsonStr(snapshot5));
+
+
+    assertThat(cachedMetadataStore1.getInstances()).contains(snapshot1, snapshot2, snapshot4, snapshot5);
+    // This fails - showing the cache has diverged and will never be updated
+    // But if you see a few lines above when we fetch data from metadataStore the ZK data as seen from the original server has changed
+    assertThat(cache.getInstances()).contains(snapshot1, snapshot2, snapshot4, snapshot5);
+  }
+
+  @SuppressWarnings("OptionalGetWithoutIsPresent")
   @Test
   public void watchCachePersistentTreeTest() throws Exception {
     String root = "/root";
