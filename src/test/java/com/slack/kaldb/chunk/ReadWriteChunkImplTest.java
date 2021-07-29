@@ -1,5 +1,6 @@
 package com.slack.kaldb.chunk;
 
+import static com.slack.kaldb.chunk.ChunkInfo.makeChunkInfo;
 import static com.slack.kaldb.chunk.ReadWriteChunkImpl.INDEX_FILES_UPLOAD;
 import static com.slack.kaldb.chunk.ReadWriteChunkImpl.INDEX_FILES_UPLOAD_FAILED;
 import static com.slack.kaldb.chunk.ReadWriteChunkImpl.SNAPSHOT_TIMER;
@@ -62,7 +63,7 @@ public class ReadWriteChunkImplTest {
       final LuceneIndexStoreImpl logStore =
           LuceneIndexStoreImpl.makeLogStore(
               temporaryFolder.newFolder(), commitInterval, refreshInterval, registry);
-      chunk = new ReadWriteChunkImpl<>(logStore, chunkDataPrefix, registry);
+      chunk = new ReadWriteChunkImpl<>(logStore, makeChunkInfo(chunkDataPrefix), registry);
     }
 
     @After
@@ -337,7 +338,7 @@ public class ReadWriteChunkImplTest {
       LuceneIndexStoreImpl logStore =
           LuceneIndexStoreImpl.makeLogStore(
               temporaryFolder.newFolder(), commitInterval, refreshInterval, registry);
-      chunk = new ReadWriteChunkImpl<>(logStore, "testDataSet", registry);
+      chunk = new ReadWriteChunkImpl<>(logStore, makeChunkInfo("testDataSet"), registry);
     }
 
     @After

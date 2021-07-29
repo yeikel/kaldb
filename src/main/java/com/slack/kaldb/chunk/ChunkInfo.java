@@ -22,8 +22,8 @@ public class ChunkInfo {
   public static ChunkInfo makeChunkInfo(String chunkDataPrefix) {
     Instant chunkCreationTime = Instant.now();
     return new ChunkInfo(
-            chunkDataPrefix + "_" + chunkCreationTime.toEpochMilli(),
-            chunkCreationTime.getEpochSecond());
+        chunkDataPrefix + "_" + chunkCreationTime.toEpochMilli(),
+        chunkCreationTime.getEpochSecond());
   }
 
   /* A unique identifier for a the chunk. */

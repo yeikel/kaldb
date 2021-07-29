@@ -1,5 +1,6 @@
 package com.slack.kaldb.chunk;
 
+import static com.slack.kaldb.chunk.ChunkInfo.makeChunkInfo;
 import static com.slack.kaldb.testlib.TemporaryLogStoreAndSearcherRule.MAX_TIME;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -40,7 +41,7 @@ public class ReadOnlyChunkImplTest {
         LuceneIndexStoreImpl.makeLogStore(
             localStore, Duration.ofSeconds(5 * 60), Duration.ofSeconds(5 * 60), registry);
     ReadWriteChunkImpl<LogMessage> chunk =
-        new ReadWriteChunkImpl<>(logStore, "testDataSet", registry);
+        new ReadWriteChunkImpl<>(logStore, makeChunkInfo("testDataSet"), registry);
     localIndexPath = logStore.getDirectory().toAbsolutePath().toString();
 
     // Add messages to the store using a ReadWriteChunkImpl.
