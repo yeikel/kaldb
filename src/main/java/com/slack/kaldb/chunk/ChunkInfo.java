@@ -2,6 +2,7 @@ package com.slack.kaldb.chunk;
 
 import static com.slack.kaldb.util.ArgValidationUtils.ensureTrue;
 
+import java.time.Instant;
 import java.util.Objects;
 
 /**
@@ -17,6 +18,13 @@ import java.util.Objects;
  * TODO: Add a state machine for a chunk?
  */
 public class ChunkInfo {
+
+  public static ChunkInfo makeChunkInfo(String chunkDataPrefix) {
+    Instant chunkCreationTime = Instant.now();
+    return new ChunkInfo(
+            chunkDataPrefix + "_" + chunkCreationTime.toEpochMilli(),
+            chunkCreationTime.getEpochSecond());
+  }
 
   /* A unique identifier for a the chunk. */
   public final String chunkId;

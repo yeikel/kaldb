@@ -51,16 +51,18 @@ public class ReadWriteChunkImpl<T> implements Chunk<T> {
 
   public ReadWriteChunkImpl(
       LogStore<T> logStore, String chunkDataPrefix, MeterRegistry meterRegistry) {
+   this(logStore, ChunkInfo.makeChunkInfo(chunkDataPrefix), meterRegistry);
+  }
+
+  public ReadWriteChunkImpl(
+          LogStore<T> logStore, ChunkInfo chunkInfo, MeterRegistry meterRegistry) {
     this.logStore = logStore;
     this.logSearcher =
-        (LogIndexSearcher<T>) new LogIndexSearcherImpl(logStore.getSearcherManager());
+            (LogIndexSearcher<T>) new LogIndexSearcherImpl(logStore.getSearcherManager());
 
     // Create chunk metadata
     Instant chunkCreationTime = Instant.now();
-    chunkInfo =
-        new ChunkInfo(
-            chunkDataPrefix + "_" + chunkCreationTime.toEpochMilli(),
-            chunkCreationTime.getEpochSecond());
+    this.chunkInfo = chunkInfo;
     this.readOnly = false;
     this.fileUploadAttempts = meterRegistry.counter(INDEX_FILES_UPLOAD);
     this.fileUploadFailures = meterRegistry.counter(INDEX_FILES_UPLOAD_FAILED);
