@@ -3,7 +3,6 @@ package com.slack.kaldb.chunk;
 import static com.slack.kaldb.chunk.ReadWriteChunkImpl.INDEX_FILES_UPLOAD;
 import static com.slack.kaldb.chunk.ReadWriteChunkImpl.INDEX_FILES_UPLOAD_FAILED;
 import static com.slack.kaldb.chunk.ReadWriteChunkImpl.SNAPSHOT_TIMER;
-import static com.slack.kaldb.logstore.BlobFsUtils.copyFromS3;
 import static com.slack.kaldb.logstore.LuceneIndexStoreImpl.COMMITS_COUNTER;
 import static com.slack.kaldb.logstore.LuceneIndexStoreImpl.MESSAGES_FAILED_COUNTER;
 import static com.slack.kaldb.logstore.LuceneIndexStoreImpl.MESSAGES_RECEIVED_COUNTER;
@@ -22,9 +21,7 @@ import com.slack.kaldb.logstore.search.SearchResult;
 import com.slack.kaldb.testlib.MessageUtil;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import java.io.File;
 import java.io.IOException;
-import java.nio.file.Paths;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -32,7 +29,6 @@ import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
-import org.apache.commons.io.FileUtils;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.ClassRule;
@@ -55,7 +51,7 @@ public class ReadWriteChunkImplTest {
     private MeterRegistry registry;
     private final Duration commitInterval = Duration.ofSeconds(5 * 60);
     private final Duration refreshInterval = Duration.ofSeconds(5 * 60);
-    private Chunk<LogMessage> chunk;
+    private ReadWriteChunkImpl<LogMessage> chunk;
 
     @Before
     public void setUp() throws IOException {
@@ -123,7 +119,7 @@ public class ReadWriteChunkImplTest {
           LocalDateTime.of(2020, 10, 1, 10, 10, 0).atZone(ZoneOffset.UTC).toInstant();
       final List<LogMessage> messages =
           MessageUtil.makeMessagesWithTimeDifference(1, 100, 1000, startTime);
-      final long messageStartTime = messages.get(0).timeSinceEpochMilli;
+      final long messageStartTimeMs = messages.get(0).timeSinceEpochMilli;
       for (LogMessage m : messages) {
         chunk.addMessage(m);
       }
@@ -134,43 +130,36 @@ public class ReadWriteChunkImplTest {
       assertThat(getCount(REFRESHES_COUNTER, registry)).isEqualTo(1);
       assertThat(getCount(COMMITS_COUNTER, registry)).isEqualTo(1);
 
-      final long expectedStartTimeEpochSecs = messageStartTime / 1000;
-      final long expectedEndTimeEpochSecs = expectedStartTimeEpochSecs + 99;
+      final long expectedEndTimeEpochMs = messageStartTimeMs + (99 * 1000);
       // Ensure chunk info is correct.
-      assertThat(chunk.info().getDataStartTimeEpochSecs()).isEqualTo(expectedStartTimeEpochSecs);
-      assertThat(chunk.info().getDataEndTimeEpochSecs()).isEqualTo(expectedEndTimeEpochSecs);
+      assertThat(chunk.info().getDataStartTimeEpochMs()).isEqualTo(messageStartTimeMs);
+      assertThat(chunk.info().getDataEndTimeEpochMs()).isEqualTo(expectedEndTimeEpochMs);
       assertThat(chunk.info().chunkId).contains(chunkDataPrefix);
-      assertThat(chunk.info().getChunkSnapshotTimeEpochSecs()).isZero();
-      assertThat(chunk.info().getChunkCreationTimeEpochSecs()).isPositive();
+      assertThat(chunk.info().getChunkSnapshotTimeEpochMs()).isZero();
+      assertThat(chunk.info().getChunkCreationTimeEpochMs()).isPositive();
 
       // Search for message in expected time range.
-      searchChunk(
-          "Message1", expectedStartTimeEpochSecs * 1000, expectedEndTimeEpochSecs * 1000, 1);
+      searchChunk("Message1", messageStartTimeMs, expectedEndTimeEpochMs, 1);
 
       // Search for message before and after the time range.
-      searchChunk("Message1", 0, (expectedStartTimeEpochSecs - 1) * 1000, 0);
-      searchChunk("Message1", (expectedEndTimeEpochSecs + 1) * 1000, MAX_TIME, 0);
+      searchChunk("Message1", 0, messageStartTimeMs - 1000, 0);
+      searchChunk("Message1", expectedEndTimeEpochMs + 1000, MAX_TIME, 0);
 
       // Search for Message1 in time range.
-      searchChunk("Message1", 0, expectedStartTimeEpochSecs * 1000, 1);
-      searchChunk("Message100", 0, expectedStartTimeEpochSecs * 1000, 0);
+      searchChunk("Message1", 0, messageStartTimeMs, 1);
+      searchChunk("Message100", 0, messageStartTimeMs, 0);
 
       // Search for Message100 in time range.
-      searchChunk(
-          "Message100", expectedStartTimeEpochSecs * 1000, expectedEndTimeEpochSecs * 1000, 1);
+      searchChunk("Message100", messageStartTimeMs, expectedEndTimeEpochMs, 1);
 
       // Message100 is in chunk but not in time range.
-      searchChunk(
-          "Message100",
-          expectedStartTimeEpochSecs * 1000,
-          (expectedStartTimeEpochSecs + 1) * 1000,
-          0);
+      searchChunk("Message100", messageStartTimeMs, messageStartTimeMs + 1000, 0);
 
       // Add more messages in other time range and search again with new time ranges.
       final List<LogMessage> newMessages =
           MessageUtil.makeMessagesWithTimeDifference(
               1, 100, 1000, startTime.plus(2, ChronoUnit.DAYS));
-      final long newMessageStartTimeEpochSecs = newMessages.get(0).timeSinceEpochMilli / 1000;
+      final long newMessageStartTimeEpochMs = newMessages.get(0).timeSinceEpochMilli;
       for (LogMessage m : newMessages) {
         chunk.addMessage(m);
       }
@@ -181,49 +170,35 @@ public class ReadWriteChunkImplTest {
       assertThat(getCount(REFRESHES_COUNTER, registry)).isEqualTo(2);
       assertThat(getCount(COMMITS_COUNTER, registry)).isEqualTo(2);
 
-      assertThat(chunk.info().getDataStartTimeEpochSecs()).isEqualTo(expectedStartTimeEpochSecs);
-      assertThat(chunk.info().getDataEndTimeEpochSecs())
-          .isEqualTo(newMessageStartTimeEpochSecs + 99);
+      assertThat(chunk.info().getDataStartTimeEpochMs()).isEqualTo(messageStartTimeMs);
+      assertThat(chunk.info().getDataEndTimeEpochMs())
+          .isEqualTo(newMessageStartTimeEpochMs + (99 * 1000));
 
       // Search for message in expected time range.
-      searchChunk(
-          "Message1", expectedStartTimeEpochSecs * 1000, expectedEndTimeEpochSecs * 1000, 1);
+      searchChunk("Message1", messageStartTimeMs, expectedEndTimeEpochMs, 1);
 
       // Search for message before and after the time range.
-      searchChunk("Message1", 0, (expectedStartTimeEpochSecs - 1) * 1000, 0);
+      searchChunk("Message1", 0, messageStartTimeMs - 1000, 0);
 
       // Search for Message1 in time range.
-      searchChunk("Message1", 0, expectedStartTimeEpochSecs * 1000, 1);
+      searchChunk("Message1", 0, messageStartTimeMs, 1);
 
       // Search for Message100 in time range.
-      searchChunk(
-          "Message100", expectedStartTimeEpochSecs * 1000, expectedEndTimeEpochSecs * 1000, 1);
+      searchChunk("Message100", messageStartTimeMs, expectedEndTimeEpochMs, 1);
 
       // Message100 is in chunk but not in time range.
-      searchChunk(
-          "Message100",
-          expectedStartTimeEpochSecs * 1000,
-          (expectedStartTimeEpochSecs + 1) * 1000,
-          0);
+      searchChunk("Message100", messageStartTimeMs, messageStartTimeMs + 1000, 0);
 
       // Search for new and old messages
-      searchChunk("Message1", (expectedStartTimeEpochSecs + 1) * 1000, MAX_TIME, 1);
-      searchChunk(
-          "Message1",
-          expectedStartTimeEpochSecs * 1000,
-          (newMessageStartTimeEpochSecs + 100) * 1000,
-          2);
-      searchChunk("Message1", expectedStartTimeEpochSecs * 1000, MAX_TIME, 2);
+      searchChunk("Message1", messageStartTimeMs + 1000, MAX_TIME, 1);
+      searchChunk("Message1", messageStartTimeMs, newMessageStartTimeEpochMs + (100 * 1000), 2);
+      searchChunk("Message1", messageStartTimeMs, MAX_TIME, 2);
 
       // Search for Message100 in time range.
-      searchChunk(
-          "Message100",
-          expectedStartTimeEpochSecs * 1000,
-          (newMessageStartTimeEpochSecs + 100) * 1000,
-          2);
+      searchChunk("Message100", messageStartTimeMs, newMessageStartTimeEpochMs + (100 * 1000), 2);
 
       // Message100 is in chunk but not in time range.
-      searchChunk("Message100", (newMessageStartTimeEpochSecs + 100) * 1000, MAX_TIME, 0);
+      searchChunk("Message100", newMessageStartTimeEpochMs + (100 * 1000), MAX_TIME, 0);
     }
 
     private void searchChunk(
@@ -267,7 +242,7 @@ public class ReadWriteChunkImplTest {
       assertThat(getCount(COMMITS_COUNTER, registry)).isEqualTo(1);
     }
 
-    @Test(expected = ReadOnlyChunkInsertionException.class)
+    @Test(expected = IllegalStateException.class)
     public void testAddMessageToReadOnlyChunk() {
       List<LogMessage> messages = MessageUtil.makeMessagesWithTimeDifference(1, 100);
       for (LogMessage m : messages) {
@@ -281,8 +256,8 @@ public class ReadWriteChunkImplTest {
       chunk.addMessage(MessageUtil.makeMessage(101));
     }
 
-    @Test(expected = IllegalStateException.class)
-    public void testCleanupOnOpenChunk() {
+    @Test
+    public void testCleanupOnOpenChunk() throws IOException {
       List<LogMessage> messages = MessageUtil.makeMessagesWithTimeDifference(1, 100);
       for (LogMessage m : messages) {
         chunk.addMessage(m);
@@ -295,7 +270,7 @@ public class ReadWriteChunkImplTest {
               new SearchQuery(MessageUtil.TEST_INDEX_NAME, "Message1", 0, MAX_TIME, 10, 1000));
       assertThat(results.hits.size()).isEqualTo(1);
 
-      chunk.cleanup();
+      chunk.close();
     }
 
     @Test
@@ -331,10 +306,11 @@ public class ReadWriteChunkImplTest {
     private SimpleMeterRegistry registry;
     private final Duration commitInterval = Duration.ofSeconds(5 * 60);
     private final Duration refreshInterval = Duration.ofSeconds(5 * 60);
-    private Chunk<LogMessage> chunk;
+    private ReadWriteChunkImpl<LogMessage> chunk;
 
     @Before
     public void setUp() throws IOException {
+      Tracing.newBuilder().build();
       registry = new SimpleMeterRegistry();
       LuceneIndexStoreImpl logStore =
           LuceneIndexStoreImpl.makeLogStore(
@@ -422,26 +398,6 @@ public class ReadWriteChunkImplTest {
       // Post snapshot cleanup.
       chunk.postSnapshot();
       chunk.close();
-      chunk.cleanup();
-
-      // Download data from S3, create a new chunk and query the data in that chunk.
-      // Download files from S3 to local FS.
-      File newLocalFolderPath = localDownloadFolder.newFolder();
-      String[] s3Files =
-          copyFromS3(bucket, "", s3BlobFs, Paths.get(newLocalFolderPath.getAbsolutePath()));
-      assertThat(FileUtils.listFiles(newLocalFolderPath, null, true).size())
-          .isEqualTo(s3Files.length);
-
-      ReadOnlyChunkImpl<LogMessage> readOnlyChunk =
-          new ReadOnlyChunkImpl<>(
-              newLocalFolderPath.getAbsoluteFile().toPath(),
-              new ChunkInfo("testDataSet2", 0),
-              registry);
-      SearchResult<LogMessage> newChunkResults = readOnlyChunk.query(searchQuery);
-      assertThat(newChunkResults.hits.size()).isEqualTo(1);
-      readOnlyChunk.close();
-      assertThat(FileUtils.listFiles(newLocalFolderPath, null, true).size())
-          .isEqualTo(s3Files.length);
 
       // TODO: Test search via read write chunk.query API. Also, add a few more messages to search.
       //      LuceneIndexStoreImpl rwLogStore =

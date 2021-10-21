@@ -3,8 +3,10 @@ package com.slack.kaldb.server;
 import com.google.common.util.concurrent.MoreExecutors;
 import com.google.common.util.concurrent.Service;
 import com.google.common.util.concurrent.ServiceManager;
-import com.slack.kaldb.chunk.ChunkCleanerTask;
-import com.slack.kaldb.chunk.ChunkManager;
+import com.slack.kaldb.chunkManager.CachingChunkManager;
+import com.slack.kaldb.chunkManager.ChunkCleanerService;
+import com.slack.kaldb.chunkManager.IndexingChunkManager;
+import com.slack.kaldb.clusterManager.ReplicaCreatorService;
 import com.slack.kaldb.config.KaldbConfig;
 import com.slack.kaldb.logstore.LogMessage;
 import com.slack.kaldb.logstore.search.KaldbDistributedQueryService;
@@ -45,51 +47,54 @@ public class Kaldb {
 
   private static final PrometheusMeterRegistry prometheusMeterRegistry =
       new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
+  protected ServiceManager serviceManager;
 
   public Kaldb(Path configFilePath) throws IOException {
     Metrics.addRegistry(prometheusMeterRegistry);
     KaldbConfig.initFromFile(configFilePath);
   }
 
-  public static void main(String[] args) throws IOException {
+  public static void main(String[] args) throws Exception {
     if (args.length == 0) {
       LOG.info("Config file is needed a first argument");
     }
     Path configFilePath = Path.of(args[0]);
 
     Kaldb kalDb = new Kaldb(configFilePath);
-    kalDb.setup();
+    kalDb.start();
   }
 
-  public void setup() {
+  public void start() throws Exception {
     setupSystemMetrics();
 
     Set<Service> services = getServices();
-    ServiceManager serviceManager = new ServiceManager(services);
+    serviceManager = new ServiceManager(services);
     serviceManager.addListener(getServiceManagerListener(), MoreExecutors.directExecutor());
-    addShutdownHook(serviceManager);
+    addShutdownHook();
 
     serviceManager.startAsync();
   }
 
-  public static Set<Service> getServices() {
+  public static Set<Service> getServices() throws Exception {
     Set<Service> services = new HashSet<>();
 
     HashSet<KaldbConfigs.NodeRole> roles = new HashSet<>(KaldbConfig.get().getNodeRolesList());
 
     MetadataStoreService metadataStoreService = new MetadataStoreService(prometheusMeterRegistry);
     services.add(metadataStoreService);
-
     if (roles.contains(KaldbConfigs.NodeRole.INDEX)) {
-
-      ChunkManager<LogMessage> chunkManager = ChunkManager.fromConfig(prometheusMeterRegistry);
+      IndexingChunkManager<LogMessage> chunkManager =
+          IndexingChunkManager.fromConfig(
+              prometheusMeterRegistry,
+              metadataStoreService,
+              KaldbConfig.get().getIndexerConfig().getServerConfig());
       services.add(chunkManager);
 
-      ChunkCleanerTask<LogMessage> chunkCleanerTask =
-          new ChunkCleanerTask<>(
+      ChunkCleanerService<LogMessage> chunkCleanerService =
+          new ChunkCleanerService<>(
               chunkManager,
               Duration.ofSeconds(KaldbConfig.get().getIndexerConfig().getStaleDurationSecs()));
-      services.add(chunkCleanerTask);
+      services.add(chunkCleanerService);
 
       LogMessageTransformer messageTransformer = KaldbIndexer.getLogMessageTransformer();
       LogMessageWriterImpl logMessageWriterImpl =
@@ -118,6 +123,32 @@ public class Kaldb {
       services.add(armeriaService);
     }
 
+    if (roles.contains(KaldbConfigs.NodeRole.CACHE)) {
+      CachingChunkManager<LogMessage> chunkManager =
+          CachingChunkManager.fromConfig(
+              prometheusMeterRegistry,
+              metadataStoreService,
+              KaldbConfig.get().getCacheConfig().getServerConfig());
+      services.add(chunkManager);
+
+      KaldbLocalQueryService<LogMessage> searcher = new KaldbLocalQueryService<>(chunkManager);
+      final int serverPort = KaldbConfig.get().getCacheConfig().getServerConfig().getServerPort();
+      ArmeriaService armeriaService =
+          new ArmeriaService(serverPort, prometheusMeterRegistry, searcher, "kalDbCache");
+      services.add(armeriaService);
+    }
+
+    if (roles.contains(KaldbConfigs.NodeRole.MANAGER)) {
+      final int serverPort = KaldbConfig.get().getManagerConfig().getServerConfig().getServerPort();
+      ArmeriaService armeriaService =
+          new ArmeriaService(serverPort, prometheusMeterRegistry, "kaldbManager");
+      services.add(armeriaService);
+
+      ReplicaCreatorService replicaCreatorService =
+          new ReplicaCreatorService(metadataStoreService, prometheusMeterRegistry);
+      services.add(replicaCreatorService);
+    }
+
     return services;
   }
 
@@ -137,26 +168,25 @@ public class Kaldb {
     };
   }
 
-  public static void addShutdownHook(ServiceManager serviceManager) {
-    Runtime.getRuntime()
-        .addShutdownHook(
-            new Thread(
-                () -> {
-                  try {
-                    serviceManager.stopAsync().awaitStopped(30, TimeUnit.SECONDS);
+  public void shutdown() {
+    try {
+      serviceManager.stopAsync().awaitStopped(30, TimeUnit.SECONDS);
 
-                    // Ensure that log4j is the final thing to shut down, so that it available
-                    // throughout the service manager shutdown lifecycle
-                    if (LogManager.getContext() instanceof LoggerContext) {
-                      LOG.info("Shutting down log4j2");
-                      Configurator.shutdown((LoggerContext) LogManager.getContext());
-                    } else {
-                      LOG.error("Unable to shutdown log4j2");
-                    }
-                  } catch (TimeoutException timeout) {
-                    // stopping timed out
-                  }
-                }));
+      // Ensure that log4j is the final thing to shut down, so that it available
+      // throughout the service manager shutdown lifecycle
+      if (LogManager.getContext() instanceof LoggerContext) {
+        LOG.info("Shutting down log4j2");
+        Configurator.shutdown((LoggerContext) LogManager.getContext());
+      } else {
+        LOG.error("Unable to shutdown log4j2");
+      }
+    } catch (TimeoutException timeout) {
+      // stopping timed out
+    }
+  }
+
+  private void addShutdownHook() {
+    Runtime.getRuntime().addShutdownHook(new Thread(this::shutdown));
   }
 
   private static void setupSystemMetrics() {

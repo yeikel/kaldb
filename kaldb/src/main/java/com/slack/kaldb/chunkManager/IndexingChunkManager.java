@@ -1,53 +1,51 @@
-package com.slack.kaldb.chunk;
+package com.slack.kaldb.chunkManager;
 
 import static com.slack.kaldb.util.ArgValidationUtils.ensureNonNullString;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 
-import brave.ScopedSpan;
-import brave.Tracing;
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.util.concurrent.*;
-import com.linecorp.armeria.common.RequestContext;
+import com.google.common.util.concurrent.FutureCallback;
+import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.ListenableFuture;
+import com.google.common.util.concurrent.ListeningExecutorService;
+import com.google.common.util.concurrent.MoreExecutors;
 import com.slack.kaldb.blobfs.s3.S3BlobFs;
-import com.slack.kaldb.blobfs.s3.S3BlobFsConfig;
+import com.slack.kaldb.chunk.Chunk;
+import com.slack.kaldb.chunk.ReadWriteChunkImpl;
+import com.slack.kaldb.chunk.SearchContext;
 import com.slack.kaldb.config.KaldbConfig;
 import com.slack.kaldb.logstore.LogMessage;
 import com.slack.kaldb.logstore.LogStore;
 import com.slack.kaldb.logstore.LuceneIndexStoreImpl;
-import com.slack.kaldb.logstore.search.SearchQuery;
-import com.slack.kaldb.logstore.search.SearchResult;
-import com.slack.kaldb.logstore.search.SearchResultAggregator;
-import com.slack.kaldb.logstore.search.SearchResultAggregatorImpl;
+import com.slack.kaldb.metadata.search.SearchMetadata;
+import com.slack.kaldb.metadata.search.SearchMetadataStore;
+import com.slack.kaldb.metadata.snapshot.SnapshotMetadataStore;
 import com.slack.kaldb.proto.config.KaldbConfigs;
-import com.spotify.futures.CompletableFutures;
+import com.slack.kaldb.server.MetadataStoreService;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.io.File;
 import java.io.IOException;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.*;
+import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * The log data in each Kaldb indexer is stored as chunks. Each chunk is backed by a single instance
- * of log store. Each log store instance which internally contains a lucene index. So, a chunk is
- * identical to a shard.
+ * Chunk manager implementation that supports appending messages to open chunks. This also is
+ * responsible for cleanly transitioning from a full chunk to a new chunk, and uploading that
+ * contents to S3, and notifying ZK of state changes.
  *
- * <p>Chunk manager provides a unified api to write and query all the chunks in the application. The
- * addMessage api is used by writers where as the query API is used by the readers.
- *
- * <p>Internally the chunk manager maintains a list of chunks. All chunks except one is considered
- * active. The chunk manager writes the message to the currently active chunk. Once a chunk reaches
- * a roll over point(defined by a roll over strategy), the current chunk is marked as read only. At
- * that point a new chunk is created which becomes the active chunk.
+ * <p>All chunks except one is considered active. The chunk manager writes the message to the
+ * currently active chunk. Once a chunk reaches a roll over point(defined by a roll over strategy),
+ * the current chunk is marked as read only. At that point a new chunk is created which becomes the
+ * active chunk.
  */
-public class ChunkManager<T> extends AbstractIdleService {
-  private static final Logger LOG = LoggerFactory.getLogger(ChunkManager.class);
+public class IndexingChunkManager<T> extends ChunkManager<T> {
+  private static final Logger LOG = LoggerFactory.getLogger(IndexingChunkManager.class);
   public static final long DEFAULT_ROLLOVER_FUTURE_TIMEOUT_MS = 30000;
 
   private final File dataDirectory;
@@ -55,17 +53,13 @@ public class ChunkManager<T> extends AbstractIdleService {
   // TODO: ChunkDataPrefix can be moved to KaldbConfig?
   private final String chunkDataPrefix;
 
-  // ConcurrentHashMap here guarantees we will not have race conditions when updating and reading
-  // the chunkMap. There is a possibility when reading that the values will be stale, so care
-  // should be taken to ensure that the possibility of the chunk having already been removed is
-  // considered.
-  private final Map<String, Chunk<T>> chunkMap = new ConcurrentHashMap<>();
-
   // TODO: Pass a reference to BlobFS instead of S3BlobFS.
   private final S3BlobFs s3BlobFs;
   private final String s3Bucket;
   private final ChunkRollOverStrategy chunkRollOverStrategy;
-  private Chunk<T> activeChunk;
+  private final MetadataStoreService metadataStoreService;
+  private final SearchContext searchContext;
+  private ReadWriteChunkImpl<T> activeChunk;
 
   private final MeterRegistry meterRegistry;
   private final AtomicLong liveMessagesIndexedGauge;
@@ -79,15 +73,8 @@ public class ChunkManager<T> extends AbstractIdleService {
   private final long rolloverFutureTimeoutMs;
   private ListenableFuture<Boolean> rolloverFuture;
 
-  // TODO: We want to move this to the config eventually
-  // Less than KaldbDistributedQueryService#READ_TIMEOUT_MS
-  public static final int QUERY_TIMEOUT_SECONDS = 10;
-  public static final int LOCAL_QUERY_THREAD_POOL_SIZE = 4;
-
   // TODO: Pass this in via config file.
   private static final String CHUNK_DATA_PREFIX = "log_data_";
-
-  private static final ExecutorService queryExecutorService = queryThreadPool();
 
   /**
    * A flag to indicate that ingestion should be stopped. Currently, we only stop ingestion when a
@@ -97,6 +84,11 @@ public class ChunkManager<T> extends AbstractIdleService {
    * afterwards.
    */
   private boolean stopIngestion;
+
+  /** Declare all the data stores used by Chunk manager here. */
+  private SnapshotMetadataStore snapshotMetadataStore;
+
+  private SearchMetadataStore searchMetadataStore;
 
   /**
    * For capacity planning, we want to control how many roll overs are in progress at the same time.
@@ -115,8 +107,7 @@ public class ChunkManager<T> extends AbstractIdleService {
         MoreExecutors.getExitingExecutorService(rollOverExecutor));
   }
 
-  // TODO: Pass in BlobFs object instead of S3BlobFS to make this more generic.
-  public ChunkManager(
+  public IndexingChunkManager(
       String chunkDataPrefix,
       String dataDirectory,
       ChunkRollOverStrategy chunkRollOverStrategy,
@@ -124,7 +115,9 @@ public class ChunkManager<T> extends AbstractIdleService {
       S3BlobFs s3BlobFs,
       String s3Bucket,
       ListeningExecutorService rollOverExecutorService,
-      long rollOverFutureTimeoutMs) {
+      long rollOverFutureTimeoutMs,
+      MetadataStoreService metadataStoreService,
+      SearchContext searchContext) {
 
     ensureNonNullString(dataDirectory, "The data directory shouldn't be empty");
     this.dataDirectory = new File(dataDirectory);
@@ -141,6 +134,8 @@ public class ChunkManager<T> extends AbstractIdleService {
     this.rolloverExecutorService = rollOverExecutorService;
     this.rolloverFuture = null;
     this.rolloverFutureTimeoutMs = rollOverFutureTimeoutMs;
+    this.metadataStoreService = metadataStoreService;
+    this.searchContext = searchContext;
     stopIngestion = true;
     activeChunk = null;
 
@@ -148,15 +143,6 @@ public class ChunkManager<T> extends AbstractIdleService {
         "Created a chunk manager with prefix {} and dataDirectory {}",
         chunkDataPrefix,
         dataDirectory);
-  }
-
-  /*
-     One day we will have to think about rate limiting/backpressure and we will revisit this so it could potentially reject threads if the pool is full
-  */
-  private static ExecutorService queryThreadPool() {
-    return Executors.newFixedThreadPool(
-        LOCAL_QUERY_THREAD_POOL_SIZE,
-        new ThreadFactoryBuilder().setNameFormat("chunk-manager-query-%d").build());
   }
 
   /**
@@ -182,7 +168,7 @@ public class ChunkManager<T> extends AbstractIdleService {
     }
 
     // find the active chunk and add a message to it
-    Chunk<T> currentChunk = getOrCreateActiveChunk();
+    ReadWriteChunkImpl<T> currentChunk = getOrCreateActiveChunk();
     currentChunk.addMessage(message);
     long currentIndexedMessages = liveMessagesIndexedGauge.incrementAndGet();
     long currentIndexedBytes = liveBytesIndexedGauge.addAndGet(msgSize);
@@ -204,16 +190,16 @@ public class ChunkManager<T> extends AbstractIdleService {
    * This method initiates a roll over of the active chunk. In future, consider moving the some of
    * the roll over logic into ChunkImpl.
    */
-  private void doRollover(Chunk<T> currentChunk) {
+  private void doRollover(ReadWriteChunkImpl<T> currentChunk) {
     // Set activeChunk to null first, so we can initiate the roll over.
     activeChunk = null;
     liveBytesIndexedGauge.set(0);
     liveMessagesIndexedGauge.set(0);
     // Set the end time of the chunk and start the roll over.
-    currentChunk.info().setChunkLastUpdatedTimeSecsEpochSecs(Instant.now().getEpochSecond());
+    currentChunk.info().setChunkLastUpdatedTimeEpochMs(Instant.now().toEpochMilli());
 
     RollOverChunkTask<T> rollOverChunkTask =
-        new RollOverChunkTask<>(
+        new RollOverChunkTask<T>(
             currentChunk, meterRegistry, s3BlobFs, s3Bucket, currentChunk.info().chunkId);
 
     if ((rolloverFuture == null) || rolloverFuture.isDone()) {
@@ -253,7 +239,7 @@ public class ChunkManager<T> extends AbstractIdleService {
   }
 
   @VisibleForTesting
-  public Chunk<T> getActiveChunk() {
+  public ReadWriteChunkImpl<T> getActiveChunk() {
     return activeChunk;
   }
 
@@ -265,147 +251,49 @@ public class ChunkManager<T> extends AbstractIdleService {
    * data in the chunk is set as system time. However, this assumption may not be true always. In
    * future, set the start time of the chunk based on the timestamp from the message.
    */
-  private Chunk<T> getOrCreateActiveChunk() throws IOException {
+  private ReadWriteChunkImpl<T> getOrCreateActiveChunk() throws IOException {
     if (activeChunk == null) {
-      // TODO: Move this line into sync block if make chunk is fast.
+      // TODO: Rewrite makeLogStore to not read from kaldb config after initialization since it
+      //  complicates unit tests.
       @SuppressWarnings("unchecked")
       LogStore<T> logStore =
           (LogStore<T>) LuceneIndexStoreImpl.makeLogStore(dataDirectory, meterRegistry);
-      Chunk<T> newChunk = new ReadWriteChunkImpl<>(logStore, chunkDataPrefix, meterRegistry);
-      chunkMap.put(newChunk.id(), newChunk);
+
+      ReadWriteChunkImpl<T> newChunk =
+          new ReadWriteChunkImpl<>(logStore, chunkDataPrefix, meterRegistry);
+      chunkList.add(newChunk);
       activeChunk = newChunk;
     }
     return activeChunk;
   }
 
-  /*
-   * Query the chunks in the time range, aggregate the results per aggregation policy and return the results.
-   * We aggregate locally and and then the query aggregator will aggregate again. This is OKAY for the current use-case we support
-   * 1. topK results sorted by timestamp
-   * 2. histogram over a fixed time range
-   * We will not aggregate locally for future use-cases that have complex group by etc
-   */
-  public CompletableFuture<SearchResult<T>> query(SearchQuery query) {
-
-    SearchResult<T> errorResult =
-        new SearchResult<>(new ArrayList<>(), 0, 0, new ArrayList<>(), 0, 0, 1, 0);
-
-    List<CompletableFuture<SearchResult<T>>> queries =
-        chunkMap
-            .values()
-            .stream()
-            .filter(
-                chunk ->
-                    chunk.containsDataInTimeRange(
-                        query.startTimeEpochMs / 1000, query.endTimeEpochMs / 1000))
-            .map(
-                (chunk) ->
-                    CompletableFuture.supplyAsync(
-                            () -> {
-                              ScopedSpan span =
-                                  Tracing.currentTracer()
-                                      .startScopedSpan("ReadWriteChunkImpl.query");
-                              span.tag("chunkId", chunk.info().chunkId);
-                              span.tag(
-                                  "chunkCreationTimeSecsSinceEpoch",
-                                  String.valueOf(chunk.info().getChunkCreationTimeEpochSecs()));
-                              span.tag(
-                                  "chunkLastUpdatedTimeSecsEpochSecs",
-                                  String.valueOf(
-                                      chunk.info().getChunkLastUpdatedTimeSecsEpochSecs()));
-                              span.tag(
-                                  "dataStartTimeEpochSecs",
-                                  String.valueOf(chunk.info().getDataStartTimeEpochSecs()));
-                              span.tag(
-                                  "dataEndTimeEpochSecs",
-                                  String.valueOf(chunk.info().getDataEndTimeEpochSecs()));
-                              span.tag(
-                                  "chunkSnapshotTimeEpochSecs",
-                                  String.valueOf(chunk.info().getChunkSnapshotTimeEpochSecs()));
-                              span.tag("numDocs", String.valueOf(chunk.info().getNumDocs()));
-                              span.tag("chunkSize", String.valueOf(chunk.info().getChunkSize()));
-                              span.tag("readOnly", String.valueOf(chunk.isReadOnly()));
-
-                              try {
-                                return chunk.query(query);
-                              } finally {
-                                span.finish();
-                              }
-                            },
-                            RequestContext.makeContextPropagating(queryExecutorService))
-                        // TODO: this will not cancel lucene query. Use ExitableDirectoryReader in
-                        // the future and pass this timeout
-                        .orTimeout(QUERY_TIMEOUT_SECONDS, TimeUnit.SECONDS))
-            .map(
-                chunkFuture ->
-                    chunkFuture.exceptionally(
-                        err -> {
-                          LOG.warn("Chunk Query Exception " + err);
-                          // We catch IllegalArgumentException ( and any other exception that
-                          // represents a parse failure ) and instead of returning an empty result
-                          // we throw back an error to the user
-                          if (err.getCause() instanceof IllegalArgumentException) {
-                            throw (IllegalArgumentException) err.getCause();
-                          }
-                          return errorResult;
-                        }))
-            .collect(Collectors.<CompletableFuture<SearchResult<T>>>toList());
-
-    // TODO: if all fails return error instead of empty and add test
-
-    // Using the spotify library ( this method is much easier to operate then using
-    // CompletableFuture.allOf and converting the CompletableFuture<Void> to
-    // CompletableFuture<List<SearchResult>>
-    CompletableFuture<List<SearchResult<T>>> searchResults = CompletableFutures.allAsList(queries);
-
-    // Increment the node count right at the end so that we increment it only once
-    //noinspection unchecked
-    return ((SearchResultAggregator<T>) new SearchResultAggregatorImpl<>(query))
-        .aggregate(searchResults)
-        .thenApply(this::incrementNodeCount);
-  }
-
-  private SearchResult<T> incrementNodeCount(SearchResult<T> searchResult) {
-    return new SearchResult<>(
-        searchResult.hits,
-        searchResult.tookMicros,
-        searchResult.totalCount,
-        searchResult.buckets,
-        searchResult.failedNodes,
-        searchResult.totalNodes + 1,
-        searchResult.totalSnapshots,
-        searchResult.snapshotsWithReplicas);
-  }
-
-  public void removeStaleChunks(List<Map.Entry<String, Chunk<T>>> staleChunks) {
+  public void removeStaleChunks(List<Chunk<T>> staleChunks) {
     if (staleChunks.isEmpty()) return;
 
     LOG.info("Stale chunks to be removed are: {}", staleChunks);
 
-    if (chunkMap.isEmpty()) {
-      LOG.warn("Possible race condition, there are no chunks in chunkMap");
+    if (chunkList.isEmpty()) {
+      LOG.warn("Possible race condition, there are no chunks in chunkList");
     }
 
     staleChunks.forEach(
-        entry -> {
+        chunk -> {
           try {
-            if (chunkMap.containsKey(entry.getKey())) {
-              final Chunk<T> chunk = entry.getValue();
+            if (chunkList.contains(chunk)) {
               String chunkInfo = chunk.info().toString();
               LOG.info("Deleting chunk {}.", chunkInfo);
 
               // Remove the chunk first from the map so we don't search it anymore.
               // Note that any pending queries may still hold references to these chunks
-              chunkMap.remove(entry.getKey());
+              chunkList.remove(chunk);
 
               chunk.close();
-              chunk.cleanup();
               LOG.info("Deleted and cleaned up chunk {}.", chunkInfo);
             } else {
               LOG.warn(
-                  "Possible bug or race condition! Chunk {} doesn't exist in chunk map {}.",
-                  entry,
-                  chunkMap);
+                  "Possible bug or race condition! Chunk {} doesn't exist in chunk list {}.",
+                  chunk,
+                  chunkList);
             }
           } catch (Exception e) {
             LOG.warn("Exception when deleting chunk", e);
@@ -414,23 +302,40 @@ public class ChunkManager<T> extends AbstractIdleService {
   }
 
   @VisibleForTesting
-  public Map<String, Chunk<T>> getChunkMap() {
-    return chunkMap;
-  }
-
-  @VisibleForTesting
   public ListenableFuture<?> getRolloverFuture() {
     return rolloverFuture;
   }
 
   @Override
-  protected void startUp() {
-    LOG.info("Starting chunk manager");
+  protected void startUp() throws Exception {
+    LOG.info("Starting indexing chunk manager");
+    metadataStoreService.awaitRunning(KaldbConfig.DEFAULT_START_STOP_DURATION);
+
+    searchMetadataStore =
+        new SearchMetadataStore(
+            metadataStoreService.getMetadataStore(),
+            KaldbConfig.SEARCH_METADATA_STORE_ZK_PATH,
+            false);
+
+    snapshotMetadataStore =
+        new SnapshotMetadataStore(
+            metadataStoreService.getMetadataStore(),
+            KaldbConfig.SNAPSHOT_METADATA_STORE_ZK_PATH,
+            false);
+
+    // TODO: Move this registration closer to chunk metadata
+    SearchMetadata searchMetadata =
+        toSearchMetadata(SearchMetadata.LIVE_SNAPSHOT_NAME, searchContext);
+    searchMetadataStore.create(searchMetadata).get();
 
     // todo - we should reconsider what it means to be initialized, vs running
     // todo - potentially defer threadpool creation until the startup has been called?
     // prevents use of chunk manager until the service has started
     stopIngestion = false;
+  }
+
+  private SearchMetadata toSearchMetadata(String snapshotName, SearchContext searchContext) {
+    return new SearchMetadata(searchContext.hostname, snapshotName, searchContext.toUrl());
   }
 
   /**
@@ -445,7 +350,7 @@ public class ChunkManager<T> extends AbstractIdleService {
    */
   @Override
   protected void shutDown() throws IOException {
-    LOG.info("Closing chunk manager.");
+    LOG.info("Closing indexing chunk manager.");
 
     // Stop executor service from taking on new tasks.
     rolloverExecutorService.shutdown();
@@ -472,40 +377,50 @@ public class ChunkManager<T> extends AbstractIdleService {
     } catch (InterruptedException e) {
       LOG.warn("Encountered error shutting down roll over executor.", e);
     }
-    for (Chunk<T> chunk : chunkMap.values()) {
-      chunk.close();
+
+    for (Chunk<T> chunk : chunkList) {
+      try {
+        chunk.close();
+      } catch (IOException e) {
+        LOG.error("Failed to close chunk.", e);
+      }
     }
-    LOG.info("Closed chunk manager.");
+
+    searchMetadataStore.close();
+    snapshotMetadataStore.close();
+    LOG.info("Closed indexing chunk manager.");
   }
 
-  public static ChunkManager<LogMessage> fromConfig(MeterRegistry meterRegistry) {
+  public static IndexingChunkManager<LogMessage> fromConfig(
+      MeterRegistry meterRegistry,
+      MetadataStoreService metadataStoreService,
+      KaldbConfigs.ServerConfig serverConfig) {
     ChunkRollOverStrategy chunkRollOverStrategy = ChunkRollOverStrategyImpl.fromConfig();
 
     // TODO: Read the config values for chunk manager from config file.
-    ChunkManager<LogMessage> chunkManager =
-        new ChunkManager<>(
+    IndexingChunkManager<LogMessage> chunkManager =
+        new IndexingChunkManager<>(
             CHUNK_DATA_PREFIX,
             KaldbConfig.get().getIndexerConfig().getDataDirectory(),
             chunkRollOverStrategy,
             meterRegistry,
             getS3BlobFsClient(KaldbConfig.get()),
             KaldbConfig.get().getS3Config().getS3Bucket(),
-            ChunkManager.makeDefaultRollOverExecutor(),
-            ChunkManager.DEFAULT_ROLLOVER_FUTURE_TIMEOUT_MS);
+            makeDefaultRollOverExecutor(),
+            DEFAULT_ROLLOVER_FUTURE_TIMEOUT_MS,
+            metadataStoreService,
+            SearchContext.fromConfig(serverConfig));
 
     return chunkManager;
   }
 
-  private static S3BlobFs getS3BlobFsClient(KaldbConfigs.KaldbConfig kaldbCfg) {
-    KaldbConfigs.S3Config s3Config = kaldbCfg.getS3Config();
-    S3BlobFsConfig s3BlobFsConfig =
-        new S3BlobFsConfig(
-            s3Config.getS3AccessKey(),
-            s3Config.getS3SecretKey(),
-            s3Config.getS3Region(),
-            s3Config.getS3EndPoint());
-    S3BlobFs s3BlobFs = new S3BlobFs();
-    s3BlobFs.init(s3BlobFsConfig);
-    return s3BlobFs;
+  @VisibleForTesting
+  public SnapshotMetadataStore getSnapshotMetadataStore() {
+    return snapshotMetadataStore;
+  }
+
+  @VisibleForTesting
+  public SearchMetadataStore getSearchMetadataStore() {
+    return searchMetadataStore;
   }
 }

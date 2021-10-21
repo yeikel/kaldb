@@ -9,7 +9,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.io.Resources;
 import com.linecorp.armeria.common.AggregatedHttpResponse;
 import com.linecorp.armeria.common.HttpResponse;
-import com.slack.kaldb.chunk.ChunkManager;
+import com.slack.kaldb.chunkManager.IndexingChunkManager;
 import com.slack.kaldb.logstore.LogMessage;
 import com.slack.kaldb.logstore.search.KaldbLocalQueryService;
 import com.slack.kaldb.testlib.ChunkManagerUtil;
@@ -40,14 +40,12 @@ public class ElasticsearchApiServiceTest {
   private ChunkManagerUtil<LogMessage> chunkManagerUtil;
 
   @Before
-  public void setUp() throws IOException, TimeoutException {
+  public void setUp() throws Exception {
     Tracing.newBuilder().build();
     KaldbConfigUtil.initEmptyIndexerConfig();
-
     metricsRegistry = new SimpleMeterRegistry();
     chunkManagerUtil =
         new ChunkManagerUtil<>(S3_MOCK_RULE, metricsRegistry, 10 * 1024 * 1024 * 1024L, 1000000L);
-
     KaldbLocalQueryService<LogMessage> searcher =
         new KaldbLocalQueryService<>(chunkManagerUtil.chunkManager);
     elasticsearchApiService = new ElasticsearchApiService(searcher);
@@ -237,7 +235,7 @@ public class ElasticsearchApiServiceTest {
   }
 
   private void addMessagesToChunkManager(List<LogMessage> messages) throws IOException {
-    ChunkManager<LogMessage> chunkManager = chunkManagerUtil.chunkManager;
+    IndexingChunkManager<LogMessage> chunkManager = chunkManagerUtil.chunkManager;
     for (LogMessage m : messages) {
       chunkManager.addMessage(m, m.toString().length(), 100);
     }

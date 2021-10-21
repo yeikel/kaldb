@@ -1,6 +1,7 @@
-package com.slack.kaldb.chunk;
+package com.slack.kaldb.chunkManager;
 
 import com.slack.kaldb.blobfs.s3.S3BlobFs;
+import com.slack.kaldb.chunk.ReadWriteChunkImpl;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Instant;
@@ -19,13 +20,13 @@ public class RollOverChunkTask<T> implements Callable<Boolean> {
   private final Counter rolloversCompletedCounter;
   private final Counter rolloversFailedCounter;
 
-  private final Chunk<T> chunk;
+  private final ReadWriteChunkImpl<T> chunk;
   private final String s3Bucket;
   private final String s3BucketPrefix;
   private final S3BlobFs s3BlobFs;
 
   public RollOverChunkTask(
-      Chunk<T> chunk,
+      ReadWriteChunkImpl<T> chunk,
       MeterRegistry meterRegistry,
       S3BlobFs s3BlobFs,
       String s3Bucket,
@@ -51,7 +52,7 @@ public class RollOverChunkTask<T> implements Callable<Boolean> {
       // Post snapshot management.
       chunk.postSnapshot();
       rolloversCompletedCounter.increment();
-      chunk.info().setChunkSnapshotTimeEpochSecs(Instant.now().getEpochSecond());
+      chunk.info().setChunkSnapshotTimeEpochMs(Instant.now().toEpochMilli());
       LOG.info("Finished chunk roll over {}", chunk.info());
       return true;
     } else {

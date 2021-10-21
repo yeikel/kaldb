@@ -15,8 +15,7 @@ import com.adobe.testing.s3mock.junit4.S3MockRule;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.Maps;
 import com.google.protobuf.ByteString;
-import com.google.protobuf.InvalidProtocolBufferException;
-import com.slack.kaldb.chunk.ChunkManager;
+import com.slack.kaldb.chunkManager.IndexingChunkManager;
 import com.slack.kaldb.logstore.LogMessage;
 import com.slack.kaldb.logstore.search.SearchQuery;
 import com.slack.kaldb.logstore.search.SearchResult;
@@ -52,7 +51,7 @@ public class LogMessageWriterImplTest {
   private SimpleMeterRegistry metricsRegistry;
 
   @Before
-  public void setUp() throws InvalidProtocolBufferException, TimeoutException {
+  public void setUp() throws Exception {
     Tracing.newBuilder().build();
     KaldbConfigUtil.initEmptyIndexerConfig();
     metricsRegistry = new SimpleMeterRegistry();
@@ -450,7 +449,7 @@ public class LogMessageWriterImplTest {
   }
 
   @Test
-  public void testAvgMessageSizeCalculationOnSpanIngestion() throws IOException, TimeoutException {
+  public void testAvgMessageSizeCalculationOnSpanIngestion() throws Exception {
     final String traceId = "t1";
     final long timestampMicros = 1612550512340953L;
     final long durationMicros = 500000L;
@@ -498,7 +497,7 @@ public class LogMessageWriterImplTest {
             "testKey",
             testMurronMsg.toByteString().toByteArray());
 
-    ChunkManager<LogMessage> chunkManager = localChunkManagerUtil.chunkManager;
+    IndexingChunkManager<LogMessage> chunkManager = localChunkManagerUtil.chunkManager;
     LogMessageWriterImpl messageWriter =
         new LogMessageWriterImpl(chunkManager, LogMessageWriterImpl.spanTransformer);
 
@@ -506,7 +505,7 @@ public class LogMessageWriterImplTest {
     assertThat(getCount(MESSAGES_RECEIVED_COUNTER, localMetricsRegistry)).isEqualTo(15);
     assertThat(getCount(MESSAGES_FAILED_COUNTER, localMetricsRegistry)).isEqualTo(0);
     localChunkManagerUtil.chunkManager.getActiveChunk().commit();
-    assertThat(chunkManager.getChunkMap().size()).isEqualTo(2);
+    assertThat(chunkManager.getChunkList().size()).isEqualTo(2);
 
     assertThat(
             chunkManager

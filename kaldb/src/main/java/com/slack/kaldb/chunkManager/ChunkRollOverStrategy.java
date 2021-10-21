@@ -1,4 +1,4 @@
-package com.slack.kaldb.chunk;
+package com.slack.kaldb.chunkManager;
 
 // TODO: Rename ChunkRollOverPolicyPredicate
 public interface ChunkRollOverStrategy {

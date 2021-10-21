@@ -17,8 +17,8 @@ import com.linecorp.armeria.server.Server;
 import com.linecorp.armeria.server.ServerBuilder;
 import com.linecorp.armeria.server.grpc.GrpcService;
 import com.linecorp.armeria.server.grpc.GrpcServiceBuilder;
-import com.slack.kaldb.chunk.ChunkManager;
-import com.slack.kaldb.chunk.RollOverChunkTask;
+import com.slack.kaldb.chunkManager.IndexingChunkManager;
+import com.slack.kaldb.chunkManager.RollOverChunkTask;
 import com.slack.kaldb.config.KaldbConfig;
 import com.slack.kaldb.logstore.LogMessage;
 import com.slack.kaldb.logstore.search.KaldbLocalQueryService;
@@ -67,7 +67,6 @@ public class KaldbIndexerTest {
   @Before
   public void setUp() throws Exception {
     Tracing.newBuilder().build();
-    KaldbConfigUtil.initEmptyIndexerConfig();
     metricsRegistry = new SimpleMeterRegistry();
     chunkManagerUtil =
         new ChunkManagerUtil<>(S3_MOCK_RULE, metricsRegistry, 10 * 1024 * 1024 * 1024L, 100);
@@ -113,7 +112,7 @@ public class KaldbIndexerTest {
   public void testIndexFromKafkaSearchViaGrpcSearchApi() throws Exception {
     EphemeralKafkaBroker broker = kafkaServer.getBroker();
     assertThat(broker.isRunning()).isTrue();
-    ChunkManager<LogMessage> chunkManager = chunkManagerUtil.chunkManager;
+    IndexingChunkManager<LogMessage> chunkManager = chunkManagerUtil.chunkManager;
 
     final Instant startTime =
         LocalDateTime.of(2020, 10, 1, 10, 10, 0).atZone(ZoneOffset.UTC).toInstant();
@@ -162,7 +161,7 @@ public class KaldbIndexerTest {
     produceMessagesToKafka(broker, startTime);
 
     // No need to commit the active chunk since the last chunk is already closed.
-    await().until(() -> chunkManager.getChunkMap().size() == 1);
+    await().until(() -> chunkManager.getChunkList().size() == 1);
     await().until(() -> getCount(MESSAGES_RECEIVED_COUNTER, metricsRegistry) == 100);
     assertThat(getCount(MESSAGES_FAILED_COUNTER, metricsRegistry)).isEqualTo(0);
     await().until(() -> getCount(RollOverChunkTask.ROLLOVERS_INITIATED, metricsRegistry) == 1);
