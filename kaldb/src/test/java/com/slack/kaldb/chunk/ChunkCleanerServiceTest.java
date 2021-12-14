@@ -68,6 +68,112 @@ public class ChunkCleanerServiceTest {
   }
 
   @Test
+  public void testDeleteActiveChunk() throws IOException, ExecutionException, InterruptedException, TimeoutException {
+    IndexingChunkManager<LogMessage> chunkManager = chunkManagerUtil.chunkManager;
+    final Instant creationTime = Instant.now();
+    ChunkCleanerService<LogMessage> chunkCleanerService =
+            new ChunkCleanerService<>(chunkManager, Duration.ofSeconds(100));
+    assertThat(chunkManager.getChunkList().isEmpty()).isTrue();
+    final Instant startTime =
+            LocalDateTime.of(2020, 10, 1, 10, 10, 0).atZone(ZoneOffset.UTC).toInstant();
+    final List<LogMessage> messages =
+            MessageUtil.makeMessagesWithTimeDifference(1, 9, 1000, startTime);
+
+    int offset = 1;
+    for (LogMessage m : messages) {
+      chunkManager.addMessage(m, m.toString().length(), TEST_KAFKA_PARTITION_ID, offset);
+      offset++;
+    }
+
+    assertThat(chunkManager.getChunkList().size()).isEqualTo(1);
+    assertThat(getCount(MESSAGES_RECEIVED_COUNTER, metricsRegistry)).isEqualTo(9);
+    assertThat(getCount(MESSAGES_FAILED_COUNTER, metricsRegistry)).isEqualTo(0);
+
+    ReadWriteChunk<LogMessage> chunk = chunkManager.getActiveChunk();
+    assertThat(chunk.isReadOnly()).isFalse();
+    assertThat(chunk.info().getChunkSnapshotTimeEpochMs()).isZero();
+
+    testBasicSnapshotMetadata(chunkManager, creationTime);
+
+    // Commit the chunk and roll it over.
+    // chunkManager.rollOverActiveChunk();
+//    await().until(() -> getCount(RollOverChunkTask.ROLLOVERS_COMPLETED, metricsRegistry) == 1);
+//    assertThat(chunkManager.getChunkList().size()).isEqualTo(1);
+//    assertThat(getCount(MESSAGES_RECEIVED_COUNTER, metricsRegistry)).isEqualTo(9);
+//    assertThat(getCount(MESSAGES_FAILED_COUNTER, metricsRegistry)).isEqualTo(0);
+//    assertThat(getCount(RollOverChunkTask.ROLLOVERS_INITIATED, metricsRegistry)).isEqualTo(1);
+//    assertThat(getCount(RollOverChunkTask.ROLLOVERS_FAILED, metricsRegistry)).isEqualTo(0);
+
+//    List<SnapshotMetadata> afterSnapshots = fetchSnapshots(chunkManager);
+//    assertThat(afterSnapshots.size()).isEqualTo(1);
+//    assertThat(afterSnapshots).contains(ChunkInfo.toSnapshotMetadata(chunk.info(), ""));
+//    SnapshotMetadata liveSnapshot = fetchLiveSnapshot(afterSnapshots).get(0);
+//    assertThat(liveSnapshot.partitionId).isEqualTo(TEST_KAFKA_PARTITION_ID);
+//    assertThat(liveSnapshot.maxOffset).isEqualTo(9);
+//    assertThat(liveSnapshot.snapshotPath).isEqualTo(SnapshotMetadata.LIVE_SNAPSHOT_PATH);
+//    assertThat(liveSnapshot.snapshotId).startsWith(SnapshotMetadata.LIVE_SNAPSHOT_PATH);
+//    assertThat(liveSnapshot.startTimeUtc).isEqualTo(startTime.toEpochMilli());
+//    assertThat(liveSnapshot.endTimeUtc).isEqualTo(startTime.plusSeconds(8).toEpochMilli());
+//    SnapshotMetadata nonLiveSnapshot = fetchNonLiveSnapshot(afterSnapshots).get(0);
+//    assertThat(nonLiveSnapshot.partitionId).isEqualTo(TEST_KAFKA_PARTITION_ID);
+//    assertThat(nonLiveSnapshot.maxOffset).isEqualTo(9);
+//    assertThat(
+//            nonLiveSnapshot.snapshotPath.startsWith("s3")
+//                    && nonLiveSnapshot.snapshotPath.contains(nonLiveSnapshot.name))
+//            .isTrue();
+//    assertThat(nonLiveSnapshot.snapshotId).isEqualTo(nonLiveSnapshot.name);
+//    assertThat(nonLiveSnapshot.startTimeUtc).isEqualTo(startTime.toEpochMilli());
+//    assertThat(nonLiveSnapshot.endTimeUtc).isEqualTo(startTime.plusSeconds(8).toEpochMilli());
+
+//    List<SearchMetadata> afterSearchNodes = fetchSearchNodes(chunkManager);
+//    assertThat(afterSearchNodes.size()).isEqualTo(1);
+//    assertThat(afterSearchNodes.get(0).url).contains(TEST_HOST);
+//    assertThat(afterSearchNodes.get(0).url).contains(String.valueOf(TEST_PORT));
+//    assertThat(afterSearchNodes.get(0).snapshotName).contains(SnapshotMetadata.LIVE_SNAPSHOT_PATH);
+//
+//    assertThat(chunk.isReadOnly()).isTrue();
+//    assertThat(chunk.info().getChunkSnapshotTimeEpochMs()).isNotZero();
+
+    // Set the chunk snapshot time to a known value.
+    final Instant snapshotTime = Instant.now().minusSeconds(60 * 60);
+    chunk.info().setChunkSnapshotTimeEpochMs(snapshotTime.toEpochMilli());
+
+    // Running an hour before snapshot won't delete it.
+    final Instant snapshotTimeMinus1h = snapshotTime.minusSeconds(60 * 60);
+    assertThat(chunkCleanerService.deleteStaleData(snapshotTimeMinus1h)).isZero();
+
+    // Running at snapshot time won't delete it since the delay pushes it by 100 secs,.
+    assertThat(chunkCleanerService.deleteStaleData(snapshotTime)).isZero();
+
+    // Running at snapshot time won't delete it since the delay pushes it by 100 secs,.
+    final Instant oneSecondBeforeSnapshotDelay = snapshotTime.plusSeconds(99);
+    assertThat(chunkCleanerService.deleteStaleData(oneSecondBeforeSnapshotDelay)).isZero();
+
+    // Delete the chunk once we hit the time threshold.
+    assertThat(chunkCleanerService.deleteStaleData(snapshotTime.plusSeconds(100))).isEqualTo(0);
+    assertThat(chunkManager.getChunkList().size()).isEqualTo(1);
+
+//    // Check metadata after chunk is deleted.
+//    List<SnapshotMetadata> chunkDeletedSnapshots = fetchSnapshots(chunkManager);
+//    assertThat(chunkDeletedSnapshots.size()).isEqualTo(1);
+//    SnapshotMetadata nonLiveSnapshotAfterChunkDelete =
+//            fetchNonLiveSnapshot(chunkDeletedSnapshots).get(0);
+//    assertThat(nonLiveSnapshotAfterChunkDelete.partitionId).isEqualTo(TEST_KAFKA_PARTITION_ID);
+//    assertThat(nonLiveSnapshotAfterChunkDelete.maxOffset).isEqualTo(9);
+//    assertThat(
+//            nonLiveSnapshotAfterChunkDelete.snapshotPath.startsWith("s3")
+//                    && nonLiveSnapshotAfterChunkDelete.snapshotPath.contains(
+//                    nonLiveSnapshotAfterChunkDelete.name))
+//            .isTrue();
+//    assertThat(nonLiveSnapshotAfterChunkDelete.snapshotId)
+//            .isEqualTo(nonLiveSnapshotAfterChunkDelete.name);
+//    assertThat(nonLiveSnapshotAfterChunkDelete.startTimeUtc).isEqualTo(startTime.toEpochMilli());
+//    assertThat(nonLiveSnapshotAfterChunkDelete.endTimeUtc)
+//            .isEqualTo(startTime.plusSeconds(8).toEpochMilli());
+//    assertThat(fetchSearchNodes(chunkManager)).isEmpty();
+  }
+
+  @Test
   public void testDeleteStaleDataOn1Chunk()
       throws IOException, ExecutionException, InterruptedException, TimeoutException {
     IndexingChunkManager<LogMessage> chunkManager = chunkManagerUtil.chunkManager;

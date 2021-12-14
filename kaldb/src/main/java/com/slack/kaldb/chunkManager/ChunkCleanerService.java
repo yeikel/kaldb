@@ -48,7 +48,7 @@ public class ChunkCleanerService<T> extends AbstractScheduledService {
 
     List<Chunk<T>> staleChunks = new ArrayList<>();
     for (Chunk<T> chunk : (Iterable<Chunk<T>>) chunkManager.chunkList) {
-      if (chunk.info().getChunkSnapshotTimeEpochMs() <= staleDataCutOffMs) {
+      if (chunk.isReadOnly() && chunk.info().getChunkSnapshotTimeEpochMs() <= staleDataCutOffMs) {
         staleChunks.add(chunk);
       }
     }

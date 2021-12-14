@@ -343,4 +343,9 @@ public class ReadOnlyChunkImpl<T> implements Chunk<T> {
       return (SearchResult<T>) SearchResult.empty();
     }
   }
+
+  @Override
+  public boolean isReadOnly() {
+    return true;
+  }
 }

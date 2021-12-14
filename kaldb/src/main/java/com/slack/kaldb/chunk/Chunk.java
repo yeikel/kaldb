@@ -22,6 +22,8 @@ public interface Chunk<T> extends Closeable {
    */
   SearchResult<T> query(SearchQuery query);
 
+  boolean isReadOnly();
+
   /** Return true if the chunk contains data within that time range (epoch ms). */
   boolean containsDataInTimeRange(long startTs, long endTs);
 }
