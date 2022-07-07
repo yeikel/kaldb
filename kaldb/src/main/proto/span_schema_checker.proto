@@ -2,9 +2,9 @@ syntax = "proto3";
 
 package slack.proto.kaldb;
 
-option java_package = "com.slack.kaldb.proto.spanschemachecker";
+option java_package = "com.slack.kaldb.proto.spanschemaconfig";
 
-message SpanSchemaChecker {
+message SpanSchemaCheckerConfig {
   repeated Rule rules = 1;
 }
 
