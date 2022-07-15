@@ -57,3 +57,5 @@ services:
     container_name: openzipkin
     ports:
       - 9411:9411
+    environment:
+      - SELF_TRACING_ENABLED=true
