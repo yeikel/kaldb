@@ -5,7 +5,8 @@ import static org.awaitility.Awaitility.await;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.fail;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.spy;
 
 import brave.Tracing;
 import com.slack.kaldb.metadata.replica.ReplicaMetadata;
@@ -93,7 +94,7 @@ public class ReplicaRestoreServiceTest {
       long now = Instant.now().toEpochMilli();
       String id = "loop" + i;
       SnapshotMetadata snapshotIncluded = new SnapshotMetadata(id, id, now + 10, now + 15, 0, id);
-      replicaRestoreService.queueSnapshotsForRestoration(List.of(snapshotIncluded));
+      replicaRestoreService.queueSnapshotIdsForRestoration(List.of(snapshotIncluded.snapshotId));
       Thread.sleep(300);
     }
 
@@ -129,7 +130,8 @@ public class ReplicaRestoreServiceTest {
               SnapshotMetadata snapshotIncluded =
                   new SnapshotMetadata(id, id, now + 10, now + 15, 0, id);
               try {
-                replicaRestoreService.queueSnapshotsForRestoration(List.of(snapshotIncluded));
+                replicaRestoreService.queueSnapshotIdsForRestoration(
+                    List.of(snapshotIncluded.snapshotId));
                 Thread.sleep(300);
               } catch (Exception e) {
                 fail();
@@ -167,27 +169,27 @@ public class ReplicaRestoreServiceTest {
         new ReplicaRestoreService(replicaMetadataStore, meterRegistry, managerConfig);
 
     long now = Instant.now().toEpochMilli();
-    List<SnapshotMetadata> duplicateSnapshots = new ArrayList<>();
+    List<String> duplicateSnapshots = new ArrayList<>();
     for (int i = 0; i < 10; i++) {
       String id = "duplicate";
-      duplicateSnapshots.add(new SnapshotMetadata(id, id, now + 10, now + 15, 0, id));
+      duplicateSnapshots.add(id);
     }
 
-    replicaRestoreService.queueSnapshotsForRestoration(duplicateSnapshots);
+    replicaRestoreService.queueSnapshotIdsForRestoration(duplicateSnapshots);
 
     await().until(() -> replicaMetadataStore.getCached().size() == 1);
     assertThat(meterRegistry.counter(ReplicaRestoreService.REPLICAS_SKIPPED).count()).isEqualTo(9);
     assertThat(meterRegistry.counter(ReplicaRestoreService.REPLICAS_CREATED).count()).isEqualTo(1);
 
-    List<SnapshotMetadata> snapshots = new ArrayList<>();
+    List<String> snapshots = new ArrayList<>();
     for (int i = 0; i < 3; i++) {
       now = Instant.now().toEpochMilli();
       String id = "loop" + i;
-      snapshots.add(new SnapshotMetadata(id, id, now + 10, now + 15, 0, id));
+      snapshots.add(id);
     }
 
-    replicaRestoreService.queueSnapshotsForRestoration(snapshots);
-    replicaRestoreService.queueSnapshotsForRestoration(duplicateSnapshots);
+    replicaRestoreService.queueSnapshotIdsForRestoration(snapshots);
+    replicaRestoreService.queueSnapshotIdsForRestoration(duplicateSnapshots);
 
     await().until(() -> replicaMetadataStore.getCached().size() == 4);
     assertThat(meterRegistry.counter(ReplicaRestoreService.REPLICAS_SKIPPED).count()).isEqualTo(19);
@@ -212,17 +214,17 @@ public class ReplicaRestoreServiceTest {
     ReplicaRestoreService replicaRestoreService =
         new ReplicaRestoreService(replicaMetadataStore, meterRegistry, managerConfig);
 
-    List<SnapshotMetadata> snapshots = new ArrayList<>();
+    List<String> snapshots = new ArrayList<>();
     for (int i = 0; i < MAX_QUEUE_SIZE; i++) {
       long now = Instant.now().toEpochMilli();
       String id = "loop" + i;
-      snapshots.add(new SnapshotMetadata(id, id, now + 10, now + 15, 0, id));
+      snapshots.add(id);
     }
 
     assertThrows(
         SizeLimitExceededException.class,
         () -> {
-          replicaRestoreService.queueSnapshotsForRestoration(snapshots);
+          replicaRestoreService.queueSnapshotIdsForRestoration(snapshots);
         });
   }
 }

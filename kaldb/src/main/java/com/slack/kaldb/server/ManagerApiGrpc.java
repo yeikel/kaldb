@@ -191,7 +191,7 @@ public class ManagerApiGrpc extends ManagerApiServiceGrpc.ManagerApiServiceImplB
       Preconditions.checkArgument(
           !request.getServiceName().isEmpty(), "Service name must not be empty");
 
-      List<SnapshotMetadata> snapshotsToRestore =
+      List<String> snapshotsIdsToRestore =
           fetchSnapshots(
               snapshotMetadataStore.getCached(),
               datasetMetadataStore,
@@ -199,7 +199,7 @@ public class ManagerApiGrpc extends ManagerApiServiceGrpc.ManagerApiServiceImplB
               request.getEndTimeEpochMs(),
               request.getServiceName());
 
-      replicaRestoreService.queueSnapshotsForRestoration(snapshotsToRestore);
+      replicaRestoreService.queueSnapshotIdsForRestoration(snapshotsIdsToRestore);
 
       responseObserver.onNext(
           ManagerApi.RestoreReplicaResponse.newBuilder().setStatus("success").build());
@@ -216,13 +216,36 @@ public class ManagerApiGrpc extends ManagerApiServiceGrpc.ManagerApiServiceImplB
     }
   }
 
+  @Override
+  public void restoreReplicaIds(
+      ManagerApi.RestoreReplicaIdsRequest request,
+      StreamObserver<ManagerApi.RestoreReplicaIdsResponse> responseObserver) {
+    try {
+      replicaRestoreService.queueSnapshotIdsForRestoration(
+          new ArrayList<>(request.getIdsToRestoreList()));
+
+      responseObserver.onNext(
+          ManagerApi.RestoreReplicaIdsResponse.newBuilder().setStatus("success").build());
+      responseObserver.onCompleted();
+    } catch (SizeLimitExceededException e) {
+      LOG.info(
+          "Error handling request: number of replicas requested exceeds maxReplicasPerRequest limit",
+          e);
+      responseObserver.onError(
+          Status.RESOURCE_EXHAUSTED.withDescription(e.getMessage()).asException());
+    } catch (Exception e) {
+      LOG.info("Error handling request", e);
+      responseObserver.onError(Status.UNKNOWN.withDescription(e.getMessage()).asException());
+    }
+  }
+
   /**
-   * Fetches all SnapshotMetadata between startTimeEpochMs and endTimeEpochMs that contain data from
-   * the queried service
+   * Fetches all IDs of SnapshotMetadata between startTimeEpochMs and endTimeEpochMs that contain
+   * data from the queried service
    *
    * @return List of SnapshotMetadata that are within specified timeframe and from queried service
    */
-  protected static List<SnapshotMetadata> fetchSnapshots(
+  protected static List<String> fetchSnapshots(
       List<SnapshotMetadata> snapshotMetadataList,
       DatasetMetadataStore datasetMetadataStore,
       long startTimeEpochMs,
@@ -238,12 +261,12 @@ public class ManagerApiGrpc extends ManagerApiServiceGrpc.ManagerApiServiceImplB
       partitionIdsWithQueriedData.addAll(datasetPartitionMetadata.partitions);
     }
 
-    List<SnapshotMetadata> snapshotMetadata = new ArrayList<>();
+    List<String> snapshotMetadata = new ArrayList<>();
 
     for (SnapshotMetadata snapshot : snapshotMetadataList) {
       if (snapshotContainsRequestedDataAndIsWithinTimeframe(
           startTimeEpochMs, endTimeEpochMs, partitionIdsWithQueriedData, snapshot)) {
-        snapshotMetadata.add(snapshot);
+        snapshotMetadata.add(snapshot.snapshotId);
       }
     }
 

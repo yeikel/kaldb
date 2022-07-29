@@ -6,7 +6,6 @@ import com.google.common.util.concurrent.AbstractScheduledService;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.slack.kaldb.metadata.replica.ReplicaMetadata;
 import com.slack.kaldb.metadata.replica.ReplicaMetadataStore;
-import com.slack.kaldb.metadata.snapshot.SnapshotMetadata;
 import com.slack.kaldb.proto.config.KaldbConfigs;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -40,7 +39,7 @@ public class ReplicaRestoreService extends AbstractScheduledService {
   private final ScheduledExecutorService executorService =
       Executors.newSingleThreadScheduledExecutor(
           new ThreadFactoryBuilder().setNameFormat("replica-restore-service-%d").build());
-  private final BlockingQueue<SnapshotMetadata> queue = new LinkedBlockingQueue<>();
+  private final BlockingQueue<String> queue = new LinkedBlockingQueue<>();
   private final ReplicaMetadataStore replicaMetadataStore;
   private final MeterRegistry meterRegistry;
   private final Counter successfullyCreatedReplicas;
@@ -109,7 +108,7 @@ public class ReplicaRestoreService extends AbstractScheduledService {
    *     exceeds maxReplicasPerRequest
    * @param snapshotsToRestore List of Snapshots to be queued for restoration
    */
-  public synchronized void queueSnapshotsForRestoration(List<SnapshotMetadata> snapshotsToRestore)
+  public synchronized void queueSnapshotIdsForRestoration(List<String> snapshotsToRestore)
       throws SizeLimitExceededException {
     if (snapshotsToRestore.size()
         >= managerConfig.getReplicaRestoreServiceConfig().getMaxReplicasPerRequest()) {
@@ -129,7 +128,7 @@ public class ReplicaRestoreService extends AbstractScheduledService {
 
     Timer.Sample restoreReplicasTimer = Timer.start(meterRegistry);
 
-    List<SnapshotMetadata> snapshotsToRestore = new ArrayList<>();
+    List<String> snapshotsToRestore = new ArrayList<>();
     Set<String> createdReplicas = new HashSet<>();
 
     for (ReplicaMetadata replicaMetadata : replicaMetadataStore.getCached()) {
@@ -138,12 +137,12 @@ public class ReplicaRestoreService extends AbstractScheduledService {
 
     queue.drainTo(snapshotsToRestore);
 
-    for (SnapshotMetadata snapshotMetadata : snapshotsToRestore) {
+    for (String snapshotId : snapshotsToRestore) {
       try {
-        restoreOrSkipSnapshot(snapshotMetadata, createdReplicas);
-        createdReplicas.add(snapshotMetadata.snapshotId);
+        restoreOrSkipSnapshot(snapshotId, createdReplicas);
+        createdReplicas.add(snapshotId);
       } catch (InterruptedException e) {
-        LOG.error("Something went wrong dequeueing snapshot ID {}", snapshotMetadata.snapshotId, e);
+        LOG.error("Something went wrong dequeueing snapshot ID {}", snapshotId, e);
         failedReplicas.increment();
       }
     }
@@ -151,26 +150,26 @@ public class ReplicaRestoreService extends AbstractScheduledService {
   }
 
   /** Creates replica from given snapshot if its ID doesn't already exist in createdReplicas */
-  private void restoreOrSkipSnapshot(SnapshotMetadata snapshot, Set<String> createdReplicas)
+  private void restoreOrSkipSnapshot(String snapshotId, Set<String> createdReplicas)
       throws InterruptedException {
-    if (!createdReplicas.contains(snapshot.snapshotId)) {
-      LOG.info("Restoring replica with ID {}", snapshot.snapshotId);
+    if (!createdReplicas.contains(snapshotId)) {
+      LOG.info("Restoring replica with ID {}", snapshotId);
 
       try {
         replicaMetadataStore.createSync(
             replicaMetadataFromSnapshotId(
-                snapshot.snapshotId,
+                snapshotId,
                 Instant.now()
                     .plus(
                         managerConfig.getReplicaRestoreServiceConfig().getReplicaLifespanMins(),
                         ChronoUnit.MINUTES)));
       } catch (Exception e) {
-        LOG.error("Error restoring replica for snapshot {}", snapshot.snapshotId, e);
+        LOG.error("Error restoring replica for snapshot {}", snapshotId, e);
       }
-      createdReplicas.add(snapshot.snapshotId);
+      createdReplicas.add(snapshotId);
       successfullyCreatedReplicas.increment();
     } else {
-      LOG.info("Skipping Snapshot ID {} ", snapshot.snapshotId);
+      LOG.info("Skipping Snapshot ID {} ", snapshotId);
       skippedReplicas.increment();
     }
   }

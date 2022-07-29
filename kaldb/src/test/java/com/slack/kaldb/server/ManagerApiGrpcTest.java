@@ -5,8 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.*;
 
 import brave.Tracing;
 import com.slack.kaldb.clusterManager.ReplicaRestoreService;
@@ -89,7 +88,7 @@ public class ManagerApiGrpcTest {
             .build();
 
     replicaRestoreService =
-        new ReplicaRestoreService(replicaMetadataStore, meterRegistry, managerConfig);
+        spy(new ReplicaRestoreService(replicaMetadataStore, meterRegistry, managerConfig));
 
     grpcCleanup.register(
         InProcessServerBuilder.forName(this.getClass().toString())
@@ -536,7 +535,7 @@ public class ManagerApiGrpcTest {
 
     await().until(() -> datasetMetadataStore.getCached().size() == 1);
 
-    List<SnapshotMetadata> snapshotsWithData =
+    List<String> snapshotsWithData =
         ManagerApiGrpc.fetchSnapshots(
             Arrays.asList(
                 overlapsEndTimeIncluded,
@@ -558,10 +557,10 @@ public class ManagerApiGrpcTest {
     assertThat(
             snapshotsWithData.containsAll(
                 Arrays.asList(
-                    overlapsStartTimeIncluded,
-                    fullyOverlapsStartEndTimeIncluded,
-                    partiallyOverlapsStartEndTimeIncluded,
-                    overlapsEndTimeIncluded)))
+                    overlapsStartTimeIncluded.snapshotId,
+                    fullyOverlapsStartEndTimeIncluded.snapshotId,
+                    partiallyOverlapsStartEndTimeIncluded.snapshotId,
+                    overlapsEndTimeIncluded.snapshotId)))
         .isTrue();
   }
 
@@ -648,6 +647,25 @@ public class ManagerApiGrpcTest {
     await().until(() -> replicaMetadataStore.getCached().size() == 2);
     assertThat(MetricsUtil.getCount(ReplicaRestoreService.REPLICAS_CREATED, meterRegistry))
         .isEqualTo(2);
+    assertThat(MetricsUtil.getCount(ReplicaRestoreService.REPLICAS_FAILED, meterRegistry))
+        .isEqualTo(0);
+
+    replicaRestoreService.stopAsync();
+  }
+
+  @Test
+  public void shouldRestoreGivenSnapshotIds() {
+    replicaRestoreService.startAsync();
+    replicaRestoreService.awaitRunning();
+
+    managerApiStub.restoreReplicaIds(
+        ManagerApi.RestoreReplicaIdsRequest.newBuilder()
+            .addAllIdsToRestore(List.of("foo", "bar", "baz"))
+            .build());
+
+    await().until(() -> replicaMetadataStore.getCached().size() == 3);
+    assertThat(MetricsUtil.getCount(ReplicaRestoreService.REPLICAS_CREATED, meterRegistry))
+        .isEqualTo(3);
     assertThat(MetricsUtil.getCount(ReplicaRestoreService.REPLICAS_FAILED, meterRegistry))
         .isEqualTo(0);
 
