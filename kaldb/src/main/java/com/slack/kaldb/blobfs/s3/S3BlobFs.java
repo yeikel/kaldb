@@ -19,6 +19,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.IOUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
@@ -28,9 +29,11 @@ import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.SdkSystemSetting;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.core.sync.ResponseTransformer;
+import software.amazon.awssdk.profiles.ProfileFile;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.S3ClientBuilder;
+import software.amazon.awssdk.services.s3.S3Configuration;
 import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
 import software.amazon.awssdk.services.s3.model.CopyObjectResponse;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
@@ -84,6 +87,19 @@ public class S3BlobFs extends BlobFs {
           "software.amazon.awssdk.http.apache.ApacheSdkHttpService");
       S3ClientBuilder s3ClientBuilder =
           S3Client.builder().region(Region.of(region)).credentialsProvider(awsCredentialsProvider);
+      
+      S3Configuration s3Config = S3Configuration.builder()
+          .profileFile(
+              ProfileFile.builder()
+                  .content(IOUtils.toInputStream("[default]\n" +
+                      "s3 =\n" +
+                      "  max_bandwidth = 1MB/s\n"))
+                  .build()
+          )
+          .profileName("default")
+          .build();
+      s3ClientBuilder.serviceConfiguration(s3Config);
+
       if (!isNullOrEmpty(config.getS3EndPoint())) {
         String endpoint = config.getS3EndPoint();
         try {
