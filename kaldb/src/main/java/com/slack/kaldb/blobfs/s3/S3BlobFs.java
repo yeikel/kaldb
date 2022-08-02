@@ -94,12 +94,13 @@ public class S3BlobFs extends BlobFs {
                   .content(IOUtils.toInputStream("[default]\n" +
                       "s3 =\n" +
                       "  max_bandwidth = 1MB/s\n"))
+                  .type(ProfileFile.Type.CONFIGURATION)
                   .build()
           )
           .profileName("default")
           .build();
       s3ClientBuilder.serviceConfiguration(s3Config);
-
+      
       if (!isNullOrEmpty(config.getS3EndPoint())) {
         String endpoint = config.getS3EndPoint();
         try {
