@@ -172,7 +172,7 @@ public class IndexingChunkManager<T> extends ChunkManagerBase<T> {
     long currentIndexedBytes = liveBytesIndexedGauge.addAndGet(msgSize);
 
     // If active chunk is full roll it over.
-    if (chunkRollOverStrategy.shouldRollOver(currentIndexedBytes, currentIndexedMessages)) {
+    if (chunkRollOverStrategy.shouldRollOver(activeChunk.size(), currentIndexedMessages)) {
       LOG.info(
           "After {} messages and {} bytes rolling over chunk {}.",
           currentIndexedMessages,

@@ -22,6 +22,8 @@ public interface LogStore<T> extends Closeable {
 
   void cleanup() throws IOException;
 
+  long size();
+
   Path getDirectory();
 
   /**

@@ -164,6 +164,10 @@ public abstract class ReadWriteChunk<T> implements Chunk<T> {
     return chunkInfo.containsDataInTimeRange(startTs, endTs);
   }
 
+  public long size() {
+    return logStore.size();
+  }
+
   @Override
   public void close() throws IOException {
     preClose();

@@ -47,7 +47,7 @@ public class LuceneIndexStoreImpl implements LogStore<LogMessage> {
 
   private final SearcherManager searcherManager;
   private final DocumentBuilder<LogMessage> documentBuilder;
-  private final FSDirectory indexDirectory;
+  private final WrappingMMapDirectory indexDirectory;
   private final Timer timer;
   private final SnapshotDeletionPolicy snapshotDeletionPolicy;
   private Optional<IndexWriter> indexWriter;
@@ -98,7 +98,7 @@ public class LuceneIndexStoreImpl implements LogStore<LogMessage> {
         new SnapshotDeletionPolicy(new KeepOnlyLastCommitDeletionPolicy());
     IndexWriterConfig indexWriterConfig =
         buildIndexWriterConfig(analyzer, this.snapshotDeletionPolicy, config, registry);
-    indexDirectory = new MMapDirectory(config.indexFolder(id).toPath());
+    indexDirectory = new WrappingMMapDirectory(config.indexFolder(id).toPath());
     indexWriter = Optional.of(new IndexWriter(indexDirectory, indexWriterConfig));
     this.searcherManager = new SearcherManager(indexWriter.get(), false, false, null);
 
@@ -183,6 +183,11 @@ public class LuceneIndexStoreImpl implements LogStore<LogMessage> {
   private void handleNonFatal(Throwable ex) {
     messagesFailedCounter.increment();
     LOG.error(String.format("Exception %s processing", ex));
+  }
+
+  @Override
+  public long size() {
+    return indexDirectory.getSize();
   }
 
   @Override
