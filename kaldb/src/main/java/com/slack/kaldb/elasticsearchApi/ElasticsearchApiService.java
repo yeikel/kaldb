@@ -7,6 +7,7 @@ import com.google.protobuf.ByteString;
 import com.linecorp.armeria.common.HttpResponse;
 import com.linecorp.armeria.common.HttpStatus;
 import com.linecorp.armeria.common.MediaType;
+import com.linecorp.armeria.common.RequestContext;
 import com.linecorp.armeria.server.annotation.Blocking;
 import com.linecorp.armeria.server.annotation.Get;
 import com.linecorp.armeria.server.annotation.Param;
@@ -67,7 +68,7 @@ public class ElasticsearchApiService {
 
     List<EsSearchRequest> requests = EsSearchRequest.parse(postBody);
     List<EsSearchResponse> responses =
-        requests.parallelStream().map(this::doSearch).collect(Collectors.toList());
+        requests.parallelStream().map(RequestContext.current().makeContextAware(this::doSearch)).collect(Collectors.toList());
 
     SearchResponseMetadata responseMetadata = new SearchResponseMetadata(0, responses);
     return HttpResponse.of(
