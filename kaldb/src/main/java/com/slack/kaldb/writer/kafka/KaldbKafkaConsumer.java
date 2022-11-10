@@ -275,7 +275,7 @@ public class KaldbKafkaConsumer {
         messagesIndexed += recordCount;
         executor.submit(
             () -> {
-              LOG.info("ingesting a batch");
+              LOG.debug("ingesting a batch");
               for (ConsumerRecord<String, byte[]> record : records) {
                 if (startOffsetInclusive >= 0 && record.offset() < startOffsetInclusive) {
                   throw new IllegalArgumentException(

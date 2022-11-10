@@ -172,7 +172,7 @@ public class IndexingChunkManager<T> extends ChunkManagerBase<T> {
     ReadWriteChunk<T> currentChunk = getOrCreateActiveChunk(kafkaPartitionId, indexerConfig);
     currentChunk.addMessage(message, kafkaPartitionId, offset);
     long currentIndexedMessages = liveMessagesIndexedGauge.incrementAndGet();
-    long currentIndexedBytes = liveBytesIndexedGauge.addAndGet(msgSize);
+    long currentIndexeBytes = liveBytesIndexedGauge.addAndGet(msgSize);
 
     // If active chunk is full roll it over.
     if (chunkRollOverStrategy.shouldRollOver(currentIndexedBytes, currentIndexedMessages)) {

@@ -176,7 +176,7 @@ public class RecoveryTaskAssignmentServiceTest {
     for (int i = 0; i < 3; i++) {
       recoveryTaskMetadataStore.create(
           new RecoveryTaskMetadata(
-              UUID.randomUUID().toString(), "1", 0, 1, Instant.now().toEpochMilli()));
+              UUID.randomUUID().toString(), "1", 0, 1, Instant.now().toEpochMilli(), recoveryTaskState));
     }
 
     await().until(() -> recoveryTaskMetadataStore.getCached().size() == 3);
@@ -227,7 +227,7 @@ public class RecoveryTaskAssignmentServiceTest {
     for (int i = 0; i < 3; i++) {
       recoveryTaskMetadataStore.create(
           new RecoveryTaskMetadata(
-              UUID.randomUUID().toString(), "1", 0, 1, Instant.now().toEpochMilli()));
+              UUID.randomUUID().toString(), "1", 0, 1, Instant.now().toEpochMilli(), recoveryTaskState));
     }
 
     recoveryNodeMetadataStore.create(
@@ -369,7 +369,7 @@ public class RecoveryTaskAssignmentServiceTest {
 
     RecoveryTaskMetadata newTask =
         new RecoveryTaskMetadata(
-            UUID.randomUUID().toString(), "1", 0, 1, Instant.now().toEpochMilli());
+            UUID.randomUUID().toString(), "1", 0, 1, Instant.now().toEpochMilli(), recoveryTaskState);
     recoveryTaskMetadataStore.create(newTask);
 
     RecoveryTaskMetadata oldTask =
@@ -378,7 +378,7 @@ public class RecoveryTaskAssignmentServiceTest {
             "1",
             0,
             1,
-            Instant.now().minus(1, ChronoUnit.DAYS).toEpochMilli());
+            Instant.now().minus(1, ChronoUnit.DAYS).toEpochMilli(), recoveryTaskState);
     recoveryTaskMetadataStore.create(oldTask);
 
     recoveryNodeMetadataStore.create(
@@ -450,7 +450,7 @@ public class RecoveryTaskAssignmentServiceTest {
     for (int i = 0; i < 3; i++) {
       recoveryTaskMetadataStore.create(
           new RecoveryTaskMetadata(
-              UUID.randomUUID().toString(), "1", 0, 1, Instant.now().toEpochMilli()));
+              UUID.randomUUID().toString(), "1", 0, 1, Instant.now().toEpochMilli(), recoveryTaskState));
     }
 
     await().until(() -> recoveryTaskMetadataStore.getCached().size() == 3);
@@ -555,7 +555,7 @@ public class RecoveryTaskAssignmentServiceTest {
     for (int i = 0; i < 2; i++) {
       recoveryTaskMetadataStore.create(
           new RecoveryTaskMetadata(
-              UUID.randomUUID().toString(), "1", 0, 1, Instant.now().toEpochMilli()));
+              UUID.randomUUID().toString(), "1", 0, 1, Instant.now().toEpochMilli(), recoveryTaskState));
     }
 
     ExecutorService timeoutServiceExecutor = Executors.newSingleThreadExecutor();
@@ -651,7 +651,7 @@ public class RecoveryTaskAssignmentServiceTest {
     for (int i = 0; i < 2; i++) {
       recoveryTaskMetadataStore.create(
           new RecoveryTaskMetadata(
-              UUID.randomUUID().toString(), "1", 0, 1, Instant.now().toEpochMilli()));
+              UUID.randomUUID().toString(), "1", 0, 1, Instant.now().toEpochMilli(), recoveryTaskState));
     }
 
     doCallRealMethod()
@@ -751,7 +751,7 @@ public class RecoveryTaskAssignmentServiceTest {
     for (int i = 0; i < 10; i++) {
       recoveryTaskMetadataStore.create(
           new RecoveryTaskMetadata(
-              UUID.randomUUID().toString(), "1", 0, 1, Instant.now().toEpochMilli()));
+              UUID.randomUUID().toString(), "1", 0, 1, Instant.now().toEpochMilli(), recoveryTaskState));
     }
 
     await().until(() -> recoveryTaskMetadataStore.getCached().size() == 10);
@@ -855,7 +855,7 @@ public class RecoveryTaskAssignmentServiceTest {
     for (int i = 0; i < 10; i++) {
       recoveryTaskMetadataStore.create(
           new RecoveryTaskMetadata(
-              UUID.randomUUID().toString(), "1", 0, 1, Instant.now().toEpochMilli()));
+              UUID.randomUUID().toString(), "1", 0, 1, Instant.now().toEpochMilli(), recoveryTaskState));
     }
     await().until(() -> recoveryTaskMetadataStore.getCached().size() == 10);
 

@@ -12,6 +12,7 @@ import com.slack.kaldb.metadata.recovery.RecoveryTaskMetadata;
 import com.slack.kaldb.metadata.recovery.RecoveryTaskMetadataStore;
 import com.slack.kaldb.metadata.snapshot.SnapshotMetadata;
 import com.slack.kaldb.metadata.snapshot.SnapshotMetadataStore;
+import com.slack.kaldb.proto.metadata.Metadata;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Instant;
@@ -251,7 +252,7 @@ public class RecoveryTaskCreator {
     final String recoveryTaskName = getRecoveryTaskName(partitionId);
     recoveryTaskMetadataStore.createSync(
         new RecoveryTaskMetadata(
-            recoveryTaskName, partitionId, startOffset, endOffset, creationTimeEpochMs));
+            recoveryTaskName, partitionId, startOffset, endOffset, creationTimeEpochMs, Metadata.RecoveryTaskMetadata.RecoveryTaskState.PENDING));
     LOG.info(
         "Created recovery task {} to catchup. Moving the starting offset to head at {}",
         recoveryTaskName,

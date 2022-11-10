@@ -24,6 +24,7 @@ import com.slack.kaldb.metadata.recovery.RecoveryTaskMetadataStore;
 import com.slack.kaldb.metadata.snapshot.SnapshotMetadata;
 import com.slack.kaldb.metadata.snapshot.SnapshotMetadataStore;
 import com.slack.kaldb.metadata.zookeeper.ZookeeperMetadataStoreImpl;
+import com.slack.kaldb.proto.metadata.Metadata;
 import com.slack.kaldb.util.CountingFatalErrorHandler;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
@@ -512,6 +513,7 @@ public class RecoveryTaskCreatorTest {
     final String recoveryTaskName = "recoveryTask";
     final long recoveryStartOffset = 400;
     final long createdTimeUtc = Instant.now().toEpochMilli();
+    final Metadata.RecoveryTaskMetadata.RecoveryTaskState recoveryTaskState = Metadata.RecoveryTaskMetadata.RecoveryTaskState.PENDING;
 
     final RecoveryTaskMetadata recoveryTask1 =
         new RecoveryTaskMetadata(
@@ -519,28 +521,32 @@ public class RecoveryTaskCreatorTest {
             partitionId,
             recoveryStartOffset,
             recoveryStartOffset * 2,
-            createdTimeUtc);
+            createdTimeUtc,
+            recoveryTaskState);
     final RecoveryTaskMetadata recoveryTask11 =
         new RecoveryTaskMetadata(
             recoveryTaskName + "11",
             partitionId,
             recoveryStartOffset * 2 + 1,
             recoveryStartOffset * 3,
-            createdTimeUtc);
+            createdTimeUtc,
+            recoveryTaskState);
     final RecoveryTaskMetadata recoveryTask21 =
         new RecoveryTaskMetadata(
             recoveryTaskName + "21",
             partitionId2,
             recoveryStartOffset * 5 + 1,
             recoveryStartOffset * 6,
-            createdTimeUtc);
+            createdTimeUtc,
+            recoveryTaskState);
     final RecoveryTaskMetadata recoveryTask22 =
         new RecoveryTaskMetadata(
             recoveryTaskName + "21",
             partitionId2,
             recoveryStartOffset * 6 + 1,
             recoveryStartOffset * 7,
-            createdTimeUtc);
+            createdTimeUtc,
+            recoveryTaskState);
 
     assertThat(
             getHighestDurableOffsetForPartition(
@@ -696,6 +702,7 @@ public class RecoveryTaskCreatorTest {
     final String recoveryTaskName = "recoveryTask";
     final long recoveryStartOffset = 400;
     final long createdTimeUtc = Instant.now().toEpochMilli();
+    final Metadata.RecoveryTaskMetadata.RecoveryTaskState recoveryTaskState = Metadata.RecoveryTaskMetadata.RecoveryTaskState.PENDING;
 
     final RecoveryTaskMetadata recoveryTask1 =
         new RecoveryTaskMetadata(
@@ -703,7 +710,8 @@ public class RecoveryTaskCreatorTest {
             "2",
             recoveryStartOffset,
             recoveryStartOffset * 2,
-            createdTimeUtc);
+            createdTimeUtc,
+            recoveryTaskState);
     recoveryTaskStore.createSync(recoveryTask1);
     assertThat(recoveryTaskStore.listSync()).contains(recoveryTask1);
     assertThat(recoveryTaskCreator.determineStartingOffset(0)).isNegative();
@@ -728,6 +736,7 @@ public class RecoveryTaskCreatorTest {
     final String recoveryTaskName = "recoveryTask";
     final long recoveryStartOffset = 400;
     final long createdTimeUtc = Instant.now().toEpochMilli();
+    final Metadata.RecoveryTaskMetadata.RecoveryTaskState recoveryTaskState = Metadata.RecoveryTaskMetadata.RecoveryTaskState.PENDING;
 
     final RecoveryTaskMetadata recoveryTask1 =
         new RecoveryTaskMetadata(
@@ -735,7 +744,8 @@ public class RecoveryTaskCreatorTest {
             partitionId,
             recoveryStartOffset,
             recoveryStartOffset * 2,
-            createdTimeUtc);
+            createdTimeUtc,
+            recoveryTaskState);
     recoveryTaskStore.createSync(recoveryTask1);
     assertThat(recoveryTaskStore.listSync()).contains(recoveryTask1);
     assertThat(recoveryTaskCreator.determineStartingOffset(850))
@@ -749,7 +759,8 @@ public class RecoveryTaskCreatorTest {
             partitionId,
             recoveryStartOffset * 2 + 1,
             recoveryStartOffset * 3,
-            createdTimeUtc);
+            createdTimeUtc,
+            recoveryTaskState);
     recoveryTaskStore.createSync(recoveryTask11);
     assertThat(recoveryTaskStore.listSync()).contains(recoveryTask1, recoveryTask11);
     assertThat(recoveryTaskCreator.determineStartingOffset(1201))
@@ -781,6 +792,7 @@ public class RecoveryTaskCreatorTest {
     final String recoveryTaskName = "recoveryTask";
     final long recoveryStartOffset = 400;
     final long createdTimeUtc = Instant.now().toEpochMilli();
+    final Metadata.RecoveryTaskMetadata.RecoveryTaskState recoveryTaskState = Metadata.RecoveryTaskMetadata.RecoveryTaskState.PENDING;
 
     final RecoveryTaskMetadata recoveryTask1 =
         new RecoveryTaskMetadata(
@@ -788,7 +800,8 @@ public class RecoveryTaskCreatorTest {
             partitionId,
             recoveryStartOffset,
             recoveryStartOffset * 2,
-            createdTimeUtc);
+            createdTimeUtc,
+            recoveryTaskState);
     recoveryTaskStore.createSync(recoveryTask1);
     assertThat(recoveryTaskStore.listSync()).contains(recoveryTask1);
     final long currentHeadOffset = 4000;
@@ -825,6 +838,7 @@ public class RecoveryTaskCreatorTest {
     final String recoveryTaskName = "BasicRecoveryTask";
     final long recoveryStartOffset = 400;
     final long createdTimeUtc = Instant.now().toEpochMilli();
+    final Metadata.RecoveryTaskMetadata.RecoveryTaskState recoveryTaskState = Metadata.RecoveryTaskMetadata.RecoveryTaskState.PENDING;
 
     final RecoveryTaskMetadata recoveryTask1 =
         new RecoveryTaskMetadata(
@@ -832,7 +846,8 @@ public class RecoveryTaskCreatorTest {
             partitionId,
             recoveryStartOffset,
             recoveryStartOffset * 2,
-            createdTimeUtc);
+            createdTimeUtc,
+            recoveryTaskState);
     recoveryTaskStore.createSync(recoveryTask1);
     final RecoveryTaskMetadata recoveryTask11 =
         new RecoveryTaskMetadata(
@@ -840,7 +855,8 @@ public class RecoveryTaskCreatorTest {
             partitionId,
             recoveryStartOffset * 2 + 1,
             recoveryStartOffset * 3,
-            createdTimeUtc);
+            createdTimeUtc,
+            recoveryTaskState);
     recoveryTaskStore.createSync(recoveryTask11);
     assertThat(recoveryTaskStore.listSync()).contains(recoveryTask1, recoveryTask11);
 
@@ -878,6 +894,7 @@ public class RecoveryTaskCreatorTest {
     final String recoveryTaskName = "BasicRecoveryTask";
     final long recoveryStartOffset = 400;
     final long createdTimeUtc = Instant.now().toEpochMilli();
+    final Metadata.RecoveryTaskMetadata.RecoveryTaskState recoveryTaskState = Metadata.RecoveryTaskMetadata.RecoveryTaskState.PENDING;
 
     final RecoveryTaskMetadata recoveryTask1 =
         new RecoveryTaskMetadata(
@@ -885,7 +902,8 @@ public class RecoveryTaskCreatorTest {
             partitionId,
             recoveryStartOffset,
             recoveryStartOffset * 2,
-            createdTimeUtc);
+            createdTimeUtc,
+            recoveryTaskState);
     recoveryTaskStore.createSync(recoveryTask1);
     final RecoveryTaskMetadata recoveryTask11 =
         new RecoveryTaskMetadata(
@@ -893,7 +911,8 @@ public class RecoveryTaskCreatorTest {
             partitionId,
             recoveryStartOffset * 2 + 1,
             recoveryStartOffset * 3,
-            createdTimeUtc);
+            createdTimeUtc,
+            recoveryTaskState);
     recoveryTaskStore.createSync(recoveryTask11);
     final RecoveryTaskMetadata recoveryTask2 =
         new RecoveryTaskMetadata(
@@ -901,11 +920,12 @@ public class RecoveryTaskCreatorTest {
             "2",
             recoveryStartOffset * 3 + 1,
             recoveryStartOffset * 4,
-            createdTimeUtc);
+            createdTimeUtc,
+            recoveryTaskState);
     recoveryTaskStore.createSync(recoveryTask2);
     final RecoveryTaskMetadata recoveryTask21 =
         new RecoveryTaskMetadata(
-            recoveryTaskName + "21", "2", recoveryStartOffset * 4 + 1, 50000, createdTimeUtc);
+            recoveryTaskName + "21", "2", recoveryStartOffset * 4 + 1, 50000, createdTimeUtc, recoveryTaskState);
     recoveryTaskStore.createSync(recoveryTask21);
     assertThat(recoveryTaskStore.listSync())
         .contains(recoveryTask1, recoveryTask11, recoveryTask2, recoveryTask21);
@@ -1221,7 +1241,7 @@ public class RecoveryTaskCreatorTest {
     assertThat(snapshotMetadataStore.listSync())
         .contains(partition1, partition11, livePartition1, livePartition2, partition2);
     final RecoveryTaskMetadata recoveryTaskPartition2 =
-        new RecoveryTaskMetadata("basicRecovery" + "2", "2", 10000, 20000, 1000);
+        new RecoveryTaskMetadata("basicRecovery" + "2", "2", 10000, 20000, 1000, Metadata.RecoveryTaskMetadata.RecoveryTaskState.PENDING);
     recoveryTaskStore.createSync(recoveryTaskPartition2);
     assertThatIllegalStateException()
         .isThrownBy(() -> recoveryTaskCreator.determineStartingOffset(1650));

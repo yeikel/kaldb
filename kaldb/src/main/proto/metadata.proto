@@ -119,6 +119,14 @@ message RecoveryTaskMetadata {
 
   // Created timestamp
   int64 created_time_epoch_ms = 5;
+
+  // State of the recovery task
+  RecoveryTaskState recovery_task_state = 6;
+
+  enum RecoveryTaskState {
+    PENDING = 0;
+    FAILED = 1;
+  };
 }
 
 // Describes ownership, throughput, and partition mapping for a given dataset

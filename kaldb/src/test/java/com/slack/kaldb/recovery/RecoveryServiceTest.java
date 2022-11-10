@@ -137,7 +137,7 @@ public class RecoveryServiceTest {
     assertThat(snapshotMetadataStore.listSync().size()).isZero();
     // Start recovery
     RecoveryTaskMetadata recoveryTask =
-        new RecoveryTaskMetadata("testRecoveryTask", "0", 30, 60, Instant.now().toEpochMilli());
+        new RecoveryTaskMetadata("testRecoveryTask", "0", 30, 60, Instant.now().toEpochMilli(), Metadata.RecoveryTaskMetadata.RecoveryTaskState.PENDING);
     assertThat(recoveryService.handleRecoveryTask(recoveryTask)).isTrue();
     List<SnapshotMetadata> snapshots = snapshotMetadataStore.listSync();
     assertThat(snapshots.size()).isEqualTo(1);
@@ -178,7 +178,7 @@ public class RecoveryServiceTest {
 
     // Start recovery
     RecoveryTaskMetadata recoveryTask =
-        new RecoveryTaskMetadata("testRecoveryTask", "0", 30, 60, Instant.now().toEpochMilli());
+        new RecoveryTaskMetadata("testRecoveryTask", "0", 30, 60, Instant.now().toEpochMilli(), Metadata.RecoveryTaskMetadata.RecoveryTaskState.PENDING);
     assertThat(recoveryService.handleRecoveryTask(recoveryTask)).isFalse();
 
     assertThat(s3Client.listBuckets().buckets().size()).isEqualTo(1);
@@ -220,7 +220,7 @@ public class RecoveryServiceTest {
         new RecoveryTaskMetadataStore(metadataStore, false);
     assertThat(recoveryTaskMetadataStore.listSync().size()).isZero();
     RecoveryTaskMetadata recoveryTask =
-        new RecoveryTaskMetadata("testRecoveryTask", "0", 30, 60, Instant.now().toEpochMilli());
+        new RecoveryTaskMetadata("testRecoveryTask", "0", 30, 60, Instant.now().toEpochMilli(), Metadata.RecoveryTaskMetadata.RecoveryTaskState.PENDING);
     recoveryTaskMetadataStore.createSync(recoveryTask);
     assertThat(recoveryTaskMetadataStore.listSync().size()).isEqualTo(1);
     assertThat(recoveryTaskMetadataStore.listSync().get(0)).isEqualTo(recoveryTask);
@@ -298,7 +298,7 @@ public class RecoveryServiceTest {
         new RecoveryTaskMetadataStore(metadataStore, false);
     assertThat(recoveryTaskMetadataStore.listSync().size()).isZero();
     RecoveryTaskMetadata recoveryTask =
-        new RecoveryTaskMetadata("testRecoveryTask", "0", 30, 60, Instant.now().toEpochMilli());
+        new RecoveryTaskMetadata("testRecoveryTask", "0", 30, 60, Instant.now().toEpochMilli(), Metadata.RecoveryTaskMetadata.RecoveryTaskState.PENDING);
     recoveryTaskMetadataStore.createSync(recoveryTask);
     assertThat(recoveryTaskMetadataStore.listSync().size()).isEqualTo(1);
     assertThat(recoveryTaskMetadataStore.listSync().get(0)).isEqualTo(recoveryTask);

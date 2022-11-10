@@ -3,6 +3,8 @@ package com.slack.kaldb.metadata.recovery;
 import static com.google.common.base.Preconditions.checkArgument;
 
 import com.slack.kaldb.metadata.core.KaldbMetadata;
+import com.slack.kaldb.proto.metadata.Metadata;
+
 import java.util.Objects;
 
 /**
@@ -15,9 +17,10 @@ public class RecoveryTaskMetadata extends KaldbMetadata {
   public final long startOffset;
   public final long endOffset;
   public final long createdTimeEpochMs;
+  public final Metadata.RecoveryTaskMetadata.RecoveryTaskState recoveryTaskState;
 
   public RecoveryTaskMetadata(
-      String name, String partitionId, long startOffset, long endOffset, long createdTimeEpochMs) {
+      String name, String partitionId, long startOffset, long endOffset, long createdTimeEpochMs, Metadata.RecoveryTaskMetadata.RecoveryTaskState recoveryTaskState) {
     super(name);
 
     checkArgument(
@@ -26,11 +29,13 @@ public class RecoveryTaskMetadata extends KaldbMetadata {
     checkArgument(
         endOffset >= startOffset, "endOffset must be greater than or equal to the startOffset");
     checkArgument(createdTimeEpochMs > 0, "createdTimeEpochMs must be greater than 0");
+    checkArgument(recoveryTaskState != null, "recoveryTaskState can't be null");
 
     this.partitionId = partitionId;
     this.startOffset = startOffset;
     this.endOffset = endOffset;
     this.createdTimeEpochMs = createdTimeEpochMs;
+    this.recoveryTaskState = recoveryTaskState;
   }
 
   public long getCreatedTimeEpochMs() {
@@ -43,32 +48,23 @@ public class RecoveryTaskMetadata extends KaldbMetadata {
     if (o == null || getClass() != o.getClass()) return false;
     if (!super.equals(o)) return false;
     RecoveryTaskMetadata that = (RecoveryTaskMetadata) o;
-    return startOffset == that.startOffset
-        && endOffset == that.endOffset
-        && createdTimeEpochMs == that.createdTimeEpochMs
-        && partitionId.equals(that.partitionId);
+    return startOffset == that.startOffset && endOffset == that.endOffset && createdTimeEpochMs == that.createdTimeEpochMs && partitionId.equals(that.partitionId) && recoveryTaskState == that.recoveryTaskState;
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(super.hashCode(), partitionId, startOffset, endOffset, createdTimeEpochMs);
+    return Objects.hash(super.hashCode(), partitionId, startOffset, endOffset, createdTimeEpochMs, recoveryTaskState);
   }
 
   @Override
   public String toString() {
-    return "RecoveryTaskMetadata{"
-        + "name='"
-        + name
-        + '\''
-        + ", partitionId='"
-        + partitionId
-        + '\''
-        + ", startOffset="
-        + startOffset
-        + ", endOffset="
-        + endOffset
-        + ", createdTimeEpochMs="
-        + createdTimeEpochMs
-        + '}';
+    return "RecoveryTaskMetadata{" +
+        "partitionId='" + partitionId + '\'' +
+        ", startOffset=" + startOffset +
+        ", endOffset=" + endOffset +
+        ", createdTimeEpochMs=" + createdTimeEpochMs +
+        ", recoveryTaskState=" + recoveryTaskState +
+        ", name='" + name + '\'' +
+        '}';
   }
 }

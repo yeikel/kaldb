@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 
 import com.google.protobuf.InvalidProtocolBufferException;
 import java.time.Instant;
+
+import com.slack.kaldb.proto.metadata.Metadata;
 import org.junit.Test;
 
 public class RecoveryTaskMetadataSerializerTest {
@@ -17,9 +19,10 @@ public class RecoveryTaskMetadataSerializerTest {
     long startOffset = 0;
     long endOffset = 1;
     long createdTimeEpochMs = Instant.now().toEpochMilli();
+    final Metadata.RecoveryTaskMetadata.RecoveryTaskState recoveryTaskState = Metadata.RecoveryTaskMetadata.RecoveryTaskState.PENDING;
 
     RecoveryTaskMetadata recoveryTaskMetadata =
-        new RecoveryTaskMetadata(name, partitionId, startOffset, endOffset, createdTimeEpochMs);
+        new RecoveryTaskMetadata(name, partitionId, startOffset, endOffset, createdTimeEpochMs, recoveryTaskState);
 
     String serializedRecoveryTaskMetadata = serDe.toJsonStr(recoveryTaskMetadata);
     assertThat(serializedRecoveryTaskMetadata).isNotEmpty();
