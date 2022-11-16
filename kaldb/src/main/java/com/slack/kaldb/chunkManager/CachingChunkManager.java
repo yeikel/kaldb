@@ -1,5 +1,6 @@
 package com.slack.kaldb.chunkManager;
 
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.slack.kaldb.blobfs.BlobFs;
 import com.slack.kaldb.chunk.ReadOnlyChunkImpl;
 import com.slack.kaldb.chunk.SearchContext;
@@ -12,6 +13,9 @@ import com.slack.kaldb.metadata.zookeeper.MetadataStore;
 import com.slack.kaldb.proto.config.KaldbConfigs;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.io.IOException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,6 +37,7 @@ public class CachingChunkManager<T> extends ChunkManagerBase<T> {
   private SnapshotMetadataStore snapshotMetadataStore;
   private SearchMetadataStore searchMetadataStore;
   private CacheSlotMetadataStore cacheSlotMetadataStore;
+  private final ExecutorService executorService;
 
   public CachingChunkManager(
       MeterRegistry registry,
@@ -49,6 +54,10 @@ public class CachingChunkManager<T> extends ChunkManagerBase<T> {
     this.s3Bucket = s3Bucket;
     this.dataDirectoryPrefix = dataDirectoryPrefix;
     this.slotCountPerInstance = slotCountPerInstance;
+
+    this.executorService = Executors.newFixedThreadPool(
+        Runtime.getRuntime().availableProcessors() >= 4 ? 2 : 1,
+        new ThreadFactoryBuilder().setNameFormat("caching-chunk-manager-%d").build());
   }
 
   @Override
@@ -72,13 +81,18 @@ public class CachingChunkManager<T> extends ChunkManagerBase<T> {
               cacheSlotMetadataStore,
               replicaMetadataStore,
               snapshotMetadataStore,
-              searchMetadataStore));
+              searchMetadataStore,
+              executorService));
     }
   }
 
   @Override
   protected void shutDown() throws Exception {
     LOG.info("Closing caching chunk manager.");
+
+    // Attempt to forcibly shutdown the executor service. This prevents any further downloading of
+    // data from S3 that would be unused.
+    executorService.shutdown();
 
     chunkList.forEach(
         (readonlyChunk) -> {

@@ -81,19 +81,15 @@ public class ReadOnlyChunkImpl<T> implements Chunk<T> {
       CacheSlotMetadataStore cacheSlotMetadataStore,
       ReplicaMetadataStore replicaMetadataStore,
       SnapshotMetadataStore snapshotMetadataStore,
-      SearchMetadataStore searchMetadataStore)
+      SearchMetadataStore searchMetadataStore,
+      ExecutorService executorService)
       throws Exception {
     String slotId = UUID.randomUUID().toString();
     this.meterRegistry = meterRegistry;
     this.blobFs = blobFs;
     this.s3Bucket = s3Bucket;
     this.dataDirectoryPrefix = dataDirectoryPrefix;
-
-    // we use a single thread executor to allow operations for this chunk to queue,
-    // guaranteeing that they are executed in the order they were received
-    this.executorService =
-        Executors.newSingleThreadExecutor(
-            new ThreadFactoryBuilder().setNameFormat("readonly-chunk-%d").build());
+    this.executorService = executorService;
     this.searchContext = searchContext;
     this.slotName = String.format("%s-%s", searchContext.hostname, slotId);
 
@@ -319,11 +315,6 @@ public class ReadOnlyChunkImpl<T> implements Chunk<T> {
 
   @Override
   public void close() throws IOException {
-    // Attempt to forcibly shutdown the executor service. This prevents any further downloading of
-    // data from S3 that would be unused. We cannot wait for the result of this as there may be
-    // many ReadOnlyChunks that all need to be shutdown.
-    executorService.shutdownNow();
-
     // Attempt to evict the chunk
     handleChunkEviction();
 
