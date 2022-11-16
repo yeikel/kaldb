@@ -26,6 +26,7 @@ import java.util.concurrent.TimeUnit;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.LongPoint;
 import org.apache.lucene.index.DirectoryReader;
+import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.queryparser.classic.ParseException;
 import org.apache.lucene.queryparser.classic.QueryParser;
 import org.apache.lucene.search.BooleanClause.Occur;
@@ -33,9 +34,13 @@ import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.BooleanQuery.Builder;
 import org.apache.lucene.search.CollectorManager;
 import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.LRUQueryCache;
 import org.apache.lucene.search.MultiCollectorManager;
 import org.apache.lucene.search.Query;
+import org.apache.lucene.search.QueryCache;
+import org.apache.lucene.search.QueryCachingPolicy;
 import org.apache.lucene.search.ScoreDoc;
+import org.apache.lucene.search.SearcherFactory;
 import org.apache.lucene.search.SearcherManager;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.SortField;
@@ -59,7 +64,31 @@ public class LogIndexSearcherImpl implements LogIndexSearcher<LogMessage> {
   @VisibleForTesting
   public static SearcherManager searcherManagerFromPath(Path path) throws IOException {
     MMapDirectory directory = new MMapDirectory(path);
-    return new SearcherManager(directory, null);
+    class NonCachingQueryCache implements QueryCachingPolicy {
+      @Override
+      public void onUse(Query query) {
+        // no-op
+      }
+
+      @Override
+      public boolean shouldCache(Query query) throws IOException {
+        return false;
+      }
+    }
+    class NonCachingSearcherFactory extends SearcherFactory {
+      @Override
+      public IndexSearcher newSearcher(IndexReader reader, IndexReader previousReader)
+          throws IOException {
+        IndexSearcher indexSearcher = new IndexSearcher(reader);
+        final QueryCache queryCache = new LRUQueryCache(0, 0);
+        final QueryCachingPolicy defaultCachingPolicy = new NonCachingQueryCache();
+        indexSearcher.setQueryCache(queryCache);
+        indexSearcher.setQueryCachingPolicy(defaultCachingPolicy);
+        return indexSearcher;
+      }
+    }
+
+    return new SearcherManager(directory, new NonCachingSearcherFactory());
   }
 
   // todo - this is not needed once this data is on the snapshot
