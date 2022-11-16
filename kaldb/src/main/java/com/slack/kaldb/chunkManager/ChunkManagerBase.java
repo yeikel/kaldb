@@ -13,6 +13,7 @@ import com.slack.kaldb.logstore.search.SearchResultAggregatorImpl;
 import com.spotify.futures.CompletableFutures;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -78,6 +79,12 @@ public abstract class ChunkManagerBase<T> extends AbstractIdleService implements
               .filter(c -> query.chunkIds.contains(c.id()))
               .collect(Collectors.toList());
     }
+
+    // Shuffle the chunks to query. The chunkList is ordered, meaning if you had multiple concurrent queries
+    // that need to search the same N chunks, they would all attempt to search the same chunk at the same
+    // time, and then proceed to search the next chunk at the same time. Randomizing the list of chunks helps
+    // reduce contention when attempting to concurrently search a single IndexSearcher.
+    Collections.shuffle(chunksMatchingQuery);
 
     List<CompletableFuture<SearchResult<T>>> queries =
         chunksMatchingQuery
