@@ -75,11 +75,20 @@ public class KaldbDistributedQueryService extends KaldbQueryServiceBase {
   public static final String DISTRIBUTED_QUERY_SNAPSHOTS_WITH_REPLICAS =
       "distributed_query_snapshots_with_replicas";
 
+  public static final String TOTAL_NODES_ATTEMPTED_TO_QUERY = "total_nodes_attempted_to_query";
+
+  private static final String TOTAL_NODES_FAILED_TO_QUERY = "total_nodes_failed_to_query";
+
   private final Counter distributedQueryApdexSatisfied;
   private final Counter distributedQueryApdexTolerating;
   private final Counter distributedQueryApdexFrustrated;
   private final Counter distributedQueryTotalSnapshots;
   private final Counter distributedQuerySnapshotsWithReplicas;
+
+  private final Counter totalNodesAttemptedToQuery;
+
+  private final Counter totalNodesFailedToQuery;
+
   // Timeouts are structured such that we always attempt to return a successful response, as we
   // include metadata that should always be present. The Armeria timeout is used at the top request,
   // distributed query is used as a deadline for all nodes to return, and the local query timeout
@@ -116,6 +125,9 @@ public class KaldbDistributedQueryService extends KaldbQueryServiceBase {
     this.distributedQueryTotalSnapshots = meterRegistry.counter(DISTRIBUTED_QUERY_TOTAL_SNAPSHOTS);
     this.distributedQuerySnapshotsWithReplicas =
         meterRegistry.counter(DISTRIBUTED_QUERY_SNAPSHOTS_WITH_REPLICAS);
+
+    this.totalNodesAttemptedToQuery = meterRegistry.counter(TOTAL_NODES_ATTEMPTED_TO_QUERY);
+    this.totalNodesFailedToQuery = meterRegistry.counter(TOTAL_NODES_FAILED_TO_QUERY);
 
     // first time call this function manually so that we initialize stubs
     updateStubs();
@@ -421,10 +433,14 @@ public class KaldbDistributedQueryService extends KaldbQueryServiceBase {
         distributedQueryApdexTolerating.increment();
       } else {
         distributedQueryApdexFrustrated.increment();
+        LOG.warn("User query for '{}' was marked as frustrated due to percentage of node failures ({} failed of {} total - took {} micros)", request.getQueryString(), aggregatedResult.failedNodes, aggregatedResult.totalNodes, aggregatedResult.tookMicros);
       }
 
       distributedQueryTotalSnapshots.increment(aggregatedResult.totalSnapshots);
       distributedQuerySnapshotsWithReplicas.increment(aggregatedResult.snapshotsWithReplicas);
+
+      totalNodesAttemptedToQuery.increment(aggregatedResult.totalNodes);
+      totalNodesFailedToQuery.increment(aggregatedResult.failedNodes);
 
       LOG.debug("aggregatedResult={}", aggregatedResult);
       return SearchResultUtils.toSearchResultProto(aggregatedResult);
