@@ -80,10 +80,10 @@ public class LogIndexSearcherImpl implements LogIndexSearcher<LogMessage> {
       public IndexSearcher newSearcher(IndexReader reader, IndexReader previousReader)
           throws IOException {
         IndexSearcher indexSearcher = new IndexSearcher(reader);
-        final QueryCache queryCache = new LRUQueryCache(0, 0);
-        final QueryCachingPolicy defaultCachingPolicy = new NonCachingQueryCache();
-        indexSearcher.setQueryCache(queryCache);
-        indexSearcher.setQueryCachingPolicy(defaultCachingPolicy);
+//        final QueryCache queryCache = new LRUQueryCache(0, 0);
+//        final QueryCachingPolicy defaultCachingPolicy = new NonCachingQueryCache();
+//        indexSearcher.setQueryCache(queryCache);
+//        indexSearcher.setQueryCachingPolicy(defaultCachingPolicy);
         return indexSearcher;
       }
     }
