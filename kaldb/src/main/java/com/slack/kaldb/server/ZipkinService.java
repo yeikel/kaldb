@@ -2,6 +2,8 @@ package com.slack.kaldb.server;
 
 import static com.slack.kaldb.metadata.dataset.DatasetPartitionMetadata.MATCH_ALL_DATASET;
 
+import brave.ScopedSpan;
+import brave.Tracing;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.InvalidProtocolBufferException;
@@ -9,6 +11,7 @@ import com.google.protobuf.util.JsonFormat;
 import com.linecorp.armeria.common.HttpResponse;
 import com.linecorp.armeria.common.HttpStatus;
 import com.linecorp.armeria.common.MediaType;
+import com.linecorp.armeria.server.annotation.Blocking;
 import com.linecorp.armeria.server.annotation.Default;
 import com.linecorp.armeria.server.annotation.Get;
 import com.linecorp.armeria.server.annotation.Param;
@@ -197,6 +200,7 @@ public class ZipkinService {
   }
 
   @Get("/api/v2/trace/{traceId}")
+  @Blocking
   public HttpResponse getTraceByTraceId(
       @Param("traceId") String traceId,
       @Param("startTimeEpochMs") Optional<Long> startTimeEpochMs,
@@ -214,25 +218,43 @@ public class ZipkinService {
     long endTime =
         endTimeEpochMs.orElseGet(
             () -> Instant.now().plus(LOOKBACK_MINS, ChronoUnit.MINUTES).toEpochMilli());
+    long howMany = maxSpans.orElse(MAX_SPANS);
 
-    // TODO: when MAX_SPANS is hit the results will look weird because the index is sorted in
-    // reverse timestamp and the spans returned will be the tail. We should support sort in the
-    // search request
-    KaldbSearch.SearchRequest.Builder searchRequestBuilder = KaldbSearch.SearchRequest.newBuilder();
-    KaldbSearch.SearchResult searchResult =
-        searcher.doSearch(
-            searchRequestBuilder
-                .setDataset(MATCH_ALL_DATASET)
-                .setQueryString(queryString)
-                .setStartTimeEpochMs(startTime)
-                .setEndTimeEpochMs(endTime)
-                .setHowMany(maxSpans.orElse(MAX_SPANS))
-                .setBucketCount(0)
-                .build());
-    // we don't account for any failed nodes in the searchResult today
-    List<LogWireMessage> messages = searchResultToLogWireMessage(searchResult);
-    String output = convertLogWireMessageToZipkinSpan(messages);
+    ScopedSpan span = Tracing.currentTracer().startScopedSpan("ZipkinService.getTraceByTraceId");
+    span.tag("queryString", queryString);
+    span.tag("startTimeEpochMs", String.valueOf(startTime));
+    span.tag("endTimeEpochMs", String.valueOf(endTimeEpochMs));
+    span.tag("howMany", String.valueOf(howMany));
 
-    return HttpResponse.of(HttpStatus.OK, MediaType.JSON_UTF_8, output);
+    try {
+      // TODO: when MAX_SPANS is hit the results will look weird because the index is sorted in
+      // reverse timestamp and the spans returned will be the tail. We should support sort in the
+      // search request
+      KaldbSearch.SearchRequest.Builder searchRequestBuilder = KaldbSearch.SearchRequest.newBuilder();
+      KaldbSearch.SearchResult searchResult =
+          searcher.doSearch(
+              searchRequestBuilder
+                  .setDataset(MATCH_ALL_DATASET)
+                  .setQueryString(queryString)
+                  .setStartTimeEpochMs(startTime)
+                  .setEndTimeEpochMs(endTime)
+                  .setHowMany(maxSpans.orElse(MAX_SPANS))
+                  .setBucketCount(0)
+                  .build());
+
+      span.annotate("searchResult complete");
+      // we don't account for any failed nodes in the searchResult today
+      List<LogWireMessage> messages = searchResultToLogWireMessage(searchResult);
+
+      span.annotate("messages complete");
+      String output = convertLogWireMessageToZipkinSpan(messages);
+      span.annotate("convert to zipkin span complete");
+      return HttpResponse.of(HttpStatus.OK, MediaType.JSON_UTF_8, output);
+    } catch (Exception e) {
+      LOG.error("Error fetching zipkin results", e);
+      return HttpResponse.of(HttpStatus.INTERNAL_SERVER_ERROR);
+    } finally {
+      span.finish();
+    }
   }
 }
