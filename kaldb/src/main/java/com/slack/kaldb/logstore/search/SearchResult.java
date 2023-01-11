@@ -9,7 +9,7 @@ import java.util.List;
 
 public class SearchResult<T> {
 
-  private static final SearchResult EMPTY =
+  private static final SearchResult<LogMessage> EMPTY =
       new SearchResult<>(Collections.emptyList(), 0, 0, Collections.emptyList(), 1, 1, 0, 0);
 
   public final long totalCount;
