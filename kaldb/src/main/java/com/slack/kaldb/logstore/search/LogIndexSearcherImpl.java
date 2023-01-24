@@ -9,13 +9,13 @@ import brave.Tracing;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Stopwatch;
 import com.google.common.primitives.Ints;
-import com.slack.kaldb.histogram.FixedIntervalHistogramImpl;
-import com.slack.kaldb.histogram.Histogram;
-import com.slack.kaldb.histogram.HistogramBucket;
-import com.slack.kaldb.histogram.NoOpHistogramImpl;
 import com.slack.kaldb.logstore.LogMessage;
 import com.slack.kaldb.logstore.LogMessage.SystemField;
 import com.slack.kaldb.logstore.LogWireMessage;
+import com.slack.kaldb.logstore.search.aggregations.CountAgg;
+import com.slack.kaldb.logstore.search.aggregations.DateHistogramAggregation;
+import com.slack.kaldb.logstore.search.aggregations.FacetContext;
+import com.slack.kaldb.logstore.search.aggregations.SimpleAggValueSource;
 import com.slack.kaldb.util.JsonUtil;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -26,6 +26,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.LongPoint;
 import org.apache.lucene.index.DirectoryReader;
@@ -184,17 +185,18 @@ public class LogIndexSearcherImpl implements LogIndexSearcher<LogMessage> {
       IndexSearcher searcher = searcherManager.acquire();
       try {
         List<LogMessage> results;
-        Histogram histogram = new NoOpHistogramImpl();
+        DateHistogramAggregation histogram = null;
 
-        CollectorManager<StatsCollector, Histogram> statsCollector =
-            buildStatsCollector(bucketCount, startTimeMsEpoch, endTimeMsEpoch);
+        CollectorManager<DateHistogramAggregation, DateHistogramAggregation> histogramCollector =
+            buildDateHistogramCollector(
+                startTimeMsEpoch, endTimeMsEpoch, bucketCount, new CountAgg());
 
         if (howMany > 0) {
           CollectorManager<TopFieldCollector, TopFieldDocs> topFieldCollector =
               buildTopFieldCollector(howMany, bucketCount > 0 ? Integer.MAX_VALUE : howMany);
           MultiCollectorManager collectorManager;
           if (bucketCount > 0) {
-            collectorManager = new MultiCollectorManager(topFieldCollector, statsCollector);
+            collectorManager = new MultiCollectorManager(topFieldCollector, histogramCollector);
           } else {
             collectorManager = new MultiCollectorManager(topFieldCollector);
           }
@@ -206,25 +208,18 @@ public class LogIndexSearcherImpl implements LogIndexSearcher<LogMessage> {
             results.add(buildLogMessage(searcher, hit));
           }
           if (bucketCount > 0) {
-            histogram = ((Histogram) collector[1]);
+            histogram = ((DateHistogramAggregation) collector[1]);
           }
         } else {
           results = Collections.emptyList();
-          histogram = searcher.search(query, statsCollector);
+          histogram = searcher.search(query, histogramCollector);
         }
 
         elapsedTime.stop();
 
         List<ResponseBucket> responseBuckets = new ArrayList<>();
-        for (HistogramBucket bucket : histogram.getBuckets()) {
-          // our response from kaldb has the start and end of the bucket, but we only need the
-          // midpoint for the response object
-          long getKey =
-              new Double(bucket.getLow() + ((bucket.getHigh() - bucket.getLow()) / 2)).longValue();
-          // todo - this long double thing is weird
-          responseBuckets.add(
-              new ResponseBucket(
-                  List.of(getKey), new Double(bucket.getCount()).longValue(), Map.of()));
+        if (histogram != null) {
+          responseBuckets = histogram.getMergedResult();
         }
 
         List<ResponseAggregation> histogramResponse =
@@ -233,7 +228,12 @@ public class LogIndexSearcherImpl implements LogIndexSearcher<LogMessage> {
         return new SearchResult<>(
             results,
             elapsedTime.elapsed(TimeUnit.MICROSECONDS),
-            bucketCount > 0 ? histogram.count() : results.size(),
+            bucketCount > 0
+                ? responseBuckets
+                    .stream()
+                    .collect(Collectors.summarizingLong(ResponseBucket::getDocCount))
+                    .getSum()
+                : results.size(),
             histogramResponse,
             0,
             0,
@@ -284,30 +284,35 @@ public class LogIndexSearcherImpl implements LogIndexSearcher<LogMessage> {
     }
   }
 
-  private CollectorManager<StatsCollector, Histogram> buildStatsCollector(
-      int bucketCount, long startTimeMsEpoch, long endTimeMsEpoch) {
-    Histogram histogram =
-        bucketCount > 0
-            ? new FixedIntervalHistogramImpl(startTimeMsEpoch, endTimeMsEpoch, bucketCount)
-            : new NoOpHistogramImpl();
-
+  private CollectorManager<DateHistogramAggregation, DateHistogramAggregation>
+      buildDateHistogramCollector(
+          long startTimeMsEpoch,
+          long endTimeMsEpoch,
+          int bucketCount,
+          SimpleAggValueSource aggValueSource) {
     return new CollectorManager<>() {
       @Override
-      public StatsCollector newCollector() {
-        return new StatsCollector(histogram);
+      public DateHistogramAggregation newCollector() throws IOException {
+        return new DateHistogramAggregation(
+            startTimeMsEpoch,
+            endTimeMsEpoch,
+            bucketCount,
+            aggValueSource.createSlotAcc(new FacetContext(), 0, bucketCount));
       }
 
       @Override
-      public Histogram reduce(Collection<StatsCollector> collectors) {
-        Histogram histogram = null;
-        for (StatsCollector collector : collectors) {
-          if (histogram == null) {
-            histogram = collector.getHistogram();
+      public DateHistogramAggregation reduce(Collection<DateHistogramAggregation> collectors)
+          throws IOException {
+        DateHistogramAggregation dateHistogramAggregation = null;
+
+        for (DateHistogramAggregation collector : collectors) {
+          if (dateHistogramAggregation == null) {
+            dateHistogramAggregation = collector;
           } else {
-            histogram.mergeHistogram(collector.getHistogram().getBuckets());
+            dateHistogramAggregation.merge(collector);
           }
         }
-        return histogram;
+        return dateHistogramAggregation;
       }
     };
   }

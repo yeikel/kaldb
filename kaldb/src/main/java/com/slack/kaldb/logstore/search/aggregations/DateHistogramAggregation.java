@@ -1,45 +1,67 @@
 package com.slack.kaldb.logstore.search.aggregations;
 
+import com.slack.kaldb.logstore.LogMessage;
+import com.slack.kaldb.logstore.search.ResponseBucket;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
+import java.util.Map;
+import org.apache.lucene.index.LeafReaderContext;
+import org.apache.lucene.queries.function.FunctionValues;
+import org.apache.lucene.queries.function.ValueSource;
+import org.apache.lucene.queries.function.valuesource.LongFieldSource;
+import org.apache.lucene.search.ScoreMode;
+import org.apache.lucene.search.SimpleCollector;
 
-public class DateHistogramAggregation implements Aggregation {
+// todo (Wed)
+//  [] implement the count agg createFacetMerger
+//  [] implement the avg agg
+//  [] implement basic ability in logImpl to switch between these two aggs
+//  [] test implementation
+
+// todo (Thurs)
+//  [] Start porting proper facets
+
+// a date histogram correlates to a FacetRange
+// the "facetRange" is what has the mergables on it
+// you can "merge" two FacetRange results together
+
+// FacetProcessor is the "wrapper" to build the associated Facets (ie FacetRange, which is a FacetRequest)
+// has a createAccs() methods
+// has "collect" methods
+// has "setNextReader" methods
+
+// FacetRequest is like a DateHistogram, or a Terms (infinitely nestable sub-facets)
+
+public class DateHistogramAggregation extends SimpleCollector implements Mergable {
 
   private final long startEpochMs;
   private final long endEpochMs;
   private final long bucketCount;
 
-  private final List<BucketAggregation> bucketList = new ArrayList<>();
+  private final SlotAcc slotAcc;
 
-  public DateHistogramAggregation(long startEpochMs, long endEpochMs, int bucketCount) {
+  private final ValueSource valueSource;
+
+  public DateHistogramAggregation(
+      long startEpochMs, long endEpochMs, long bucketCount, SlotAcc slotAcc) {
     this.startEpochMs = startEpochMs;
     this.endEpochMs = endEpochMs;
     this.bucketCount = bucketCount;
-
-    long step = (endEpochMs - startEpochMs) / bucketCount;
-    for (long i = startEpochMs; i < endEpochMs; i += step) {
-      // this bucket is keyed against the midpoint
-      bucketList.add(new BucketAggregation((i + i + step) / 2, null));
-    }
+    this.slotAcc = slotAcc;
+    this.valueSource = new LongFieldSource(LogMessage.SystemField.TIME_SINCE_EPOCH.fieldName);
   }
 
-  public DateHistogramAggregation(
-      long startEpochMs, long endEpochMs, List<Aggregation> bucketList) {
-    this.startEpochMs = startEpochMs;
-    this.endEpochMs = endEpochMs;
-    this.bucketCount = bucketList.size();
-
-    long step = (endEpochMs - startEpochMs) / bucketCount;
-    int counter = 0;
-    for (long i = startEpochMs; i < endEpochMs; i += step) {
-      this.bucketList.add(new BucketAggregation((i + i + step) / 2, bucketList.get(counter)));
-      counter++;
-    }
+  private int getBucket(long epochMs) {
+    // todo - better math
+    long bucketSize =
+        Double.valueOf(Math.floor((endEpochMs - startEpochMs) / bucketCount)).longValue();
+    int index = Double.valueOf(Math.ceil((epochMs - startEpochMs) / bucketSize)).intValue();
+    return Math.max(index - 1, 0);
   }
 
   @Override
-  public void merge(Aggregation objectToMerge) {
+  public void merge(Mergable objectToMerge) {
     // do the merge thing
     if (!(objectToMerge instanceof DateHistogramAggregation)) {
       throw new IllegalArgumentException(
@@ -50,14 +72,56 @@ public class DateHistogramAggregation implements Aggregation {
     } else if (this.bucketCount != ((DateHistogramAggregation) objectToMerge).bucketCount) {
       throw new IllegalArgumentException("objectToMerge must have the same bucketSize");
     } else {
-      for (int i = 0; i < this.bucketList.size(); i++) {
-        this.bucketList.get(i).merge(((DateHistogramAggregation) objectToMerge).bucketList.get(i));
+      try {
+        for (int i = 0; i < bucketCount; i++) {
+          // public class CountAgg extends SimpleAggValueSource
+          AggValueSource slotValue = (AggValueSource) this.slotAcc.getValue(i);
+          FacetMerger merger = slotValue.createFacetMerger(null);
+          merger.merge(((DateHistogramAggregation) objectToMerge).slotAcc.getValue(i), null);
+        }
+      } catch (Exception e) {
+        throw new IllegalStateException();
       }
     }
   }
 
   @Override
-  public Object getMergedResult() {
-    return bucketList.stream().map(BucketAggregation::getMergedResult).collect(Collectors.toList());
+  public List<ResponseBucket> getMergedResult() {
+    try {
+      List<ResponseBucket> foo = new ArrayList<>();
+      for (int i = 0; i < bucketCount; i++) {
+        long bucketSize =
+            Double.valueOf(Math.floor((endEpochMs - startEpochMs) / bucketCount)).longValue();
+        long getKey = new Double(startEpochMs + (bucketSize * i) + bucketSize / 2).longValue();
+        Object value = this.slotAcc.getValue(i);
+
+        // todo
+        foo.add(new ResponseBucket(List.of(getKey), (Long) value, Map.of()));
+      }
+      return foo;
+    } catch (Exception e) {
+      throw new IllegalArgumentException();
+    }
+  }
+
+  @Override
+  protected void doSetNextReader(final LeafReaderContext context) throws IOException {
+    slotAcc.setNextReader(context);
+  }
+
+  @Override
+  public void collect(int doc) throws IOException {
+    if (slotAcc != null) {
+      FunctionValues values = valueSource.getValues(Map.of(), slotAcc.currentReaderContext);
+      long timestamp = values.longVal(doc);
+      int slot = getBucket(timestamp);
+
+      slotAcc.collect(doc, slot, null);
+    }
+  }
+
+  @Override
+  public ScoreMode scoreMode() {
+    return ScoreMode.COMPLETE_NO_SCORES;
   }
 }

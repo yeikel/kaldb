@@ -1,8 +1,8 @@
 package com.slack.kaldb.logstore.search.aggregations;
 
-public interface Aggregation {
+public interface Mergable {
 
-  void merge(Aggregation objectToMerge);
+  void merge(Mergable objectToMerge);
 
   Object getMergedResult();
 }
