@@ -14,9 +14,9 @@ import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.SimpleCollector;
 
 // todo (Wed)
-//  [] implement the count agg createFacetMerger
-//  [] implement the avg agg
-//  [] implement basic ability in logImpl to switch between these two aggs
+//  [x] implement the count agg createFacetMerger
+//  [x] implement the avg agg
+//  [x] implement basic ability in logImpl to switch between these two aggs
 //  [] test implementation
 
 // todo (Thurs)
@@ -26,7 +26,8 @@ import org.apache.lucene.search.SimpleCollector;
 // the "facetRange" is what has the mergables on it
 // you can "merge" two FacetRange results together
 
-// FacetProcessor is the "wrapper" to build the associated Facets (ie FacetRange, which is a FacetRequest)
+// FacetProcessor is the "wrapper" to build the associated Facets (ie FacetRange, which is a
+// FacetRequest)
 // has a createAccs() methods
 // has "collect" methods
 // has "setNextReader" methods
@@ -96,7 +97,25 @@ public class DateHistogramAggregation extends SimpleCollector implements Mergabl
         Object value = this.slotAcc.getValue(i);
 
         // todo
-        foo.add(new ResponseBucket(List.of(getKey), (Long) value, Map.of()));
+        if (this.slotAcc instanceof SlotAcc.CountSlotArrAcc) {
+          foo.add(new ResponseBucket(List.of(getKey), (Long) value, Map.of()));
+        } else if (this.slotAcc instanceof SlotAcc.AvgSlotAcc) {
+          // todo - what do we do about the doc count here?
+          foo.add(new ResponseBucket(List.of(getKey), 0, Map.of("value", value)));
+        } else {
+          throw new IllegalArgumentException();
+        }
+
+//        // (Long) value,
+//
+//        long val = 0L;
+//        try {
+//          val = (Long) value;
+//        } catch (Exception e) {
+//          // ignored
+//        }
+//
+//        foo.add(new ResponseBucket(List.of(getKey), val, Map.of("value", value)));
       }
       return foo;
     } catch (Exception e) {

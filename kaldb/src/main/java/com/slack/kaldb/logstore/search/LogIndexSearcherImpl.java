@@ -12,10 +12,11 @@ import com.google.common.primitives.Ints;
 import com.slack.kaldb.logstore.LogMessage;
 import com.slack.kaldb.logstore.LogMessage.SystemField;
 import com.slack.kaldb.logstore.LogWireMessage;
+import com.slack.kaldb.logstore.search.aggregations.AggValueSource;
+import com.slack.kaldb.logstore.search.aggregations.AvgAgg;
 import com.slack.kaldb.logstore.search.aggregations.CountAgg;
 import com.slack.kaldb.logstore.search.aggregations.DateHistogramAggregation;
 import com.slack.kaldb.logstore.search.aggregations.FacetContext;
-import com.slack.kaldb.logstore.search.aggregations.SimpleAggValueSource;
 import com.slack.kaldb.util.JsonUtil;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -25,11 +26,14 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.LongPoint;
 import org.apache.lucene.index.DirectoryReader;
+import org.apache.lucene.queries.function.valuesource.DoubleFieldSource;
 import org.apache.lucene.queryparser.classic.ParseException;
 import org.apache.lucene.queryparser.classic.QueryParser;
 import org.apache.lucene.search.BooleanClause.Occur;
@@ -111,7 +115,8 @@ public class LogIndexSearcherImpl implements LogIndexSearcher<LogMessage> {
                   Map.of(
                       "min", startTimeMsEpoch,
                       "max", endTimeMsEpoch)),
-              List.of());
+              List.of(
+                  new SearchAggregation("1", "avg", Map.of("field", "doubleproperty"), List.of())));
     }
 
     return search(dataset, queryStr, startTimeMsEpoch, endTimeMsEpoch, howMany, searchAggregation);
@@ -187,9 +192,18 @@ public class LogIndexSearcherImpl implements LogIndexSearcher<LogMessage> {
         List<LogMessage> results;
         DateHistogramAggregation histogram = null;
 
+        // todo - temp
+        AggValueSource aggValueSource = new CountAgg();
+        if (searchAggregation.getSubAggregators().size() > 0
+            && Objects.equals(searchAggregation.getSubAggregators().get(0).getType(), "avg")) {
+          String fieldname =
+              (String) searchAggregation.getSubAggregators().get(0).getMetadata().get("field");
+          aggValueSource = new AvgAgg(new DoubleFieldSource(fieldname));
+        }
+
         CollectorManager<DateHistogramAggregation, DateHistogramAggregation> histogramCollector =
             buildDateHistogramCollector(
-                startTimeMsEpoch, endTimeMsEpoch, bucketCount, new CountAgg());
+                startTimeMsEpoch, endTimeMsEpoch, bucketCount, aggValueSource);
 
         if (howMany > 0) {
           CollectorManager<TopFieldCollector, TopFieldDocs> topFieldCollector =
@@ -228,12 +242,13 @@ public class LogIndexSearcherImpl implements LogIndexSearcher<LogMessage> {
         return new SearchResult<>(
             results,
             elapsedTime.elapsed(TimeUnit.MICROSECONDS),
-            bucketCount > 0
-                ? responseBuckets
-                    .stream()
-                    .collect(Collectors.summarizingLong(ResponseBucket::getDocCount))
-                    .getSum()
-                : results.size(),
+                        // todo - this doesn't seem quite right
+                        bucketCount > 0
+                            ? responseBuckets
+                                .stream()
+                                .collect(Collectors.summarizingLong(ResponseBucket::getDocCount))
+                                .getSum()
+                            : results.size(),
             histogramResponse,
             0,
             0,
@@ -289,7 +304,7 @@ public class LogIndexSearcherImpl implements LogIndexSearcher<LogMessage> {
           long startTimeMsEpoch,
           long endTimeMsEpoch,
           int bucketCount,
-          SimpleAggValueSource aggValueSource) {
+          AggValueSource aggValueSource) {
     return new CollectorManager<>() {
       @Override
       public DateHistogramAggregation newCollector() throws IOException {

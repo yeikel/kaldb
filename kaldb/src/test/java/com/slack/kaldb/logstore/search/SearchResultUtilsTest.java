@@ -13,16 +13,11 @@ public class SearchResultUtilsTest {
   @Test
   public void testComplexResponseAggregationConversion() {
 
-    KaldbSearch.ResponseBucketValue responseBucketValue1 =
-        KaldbSearch.ResponseBucketValue.newBuilder().setValue(1001L).build();
     KaldbSearch.ResponseBucketResult responseBucketInner1 =
-        KaldbSearch.ResponseBucketResult.newBuilder().setValue(responseBucketValue1).build();
-
-    KaldbSearch.ResponseBucketValue responseBucketValue2 =
-        KaldbSearch.ResponseBucketValue.newBuilder().setValue(1002L).build();
+        KaldbSearch.ResponseBucketResult.newBuilder().setValue(KaldbSearch.Value.newBuilder().setLongValue(1001).build()).build();
 
     KaldbSearch.ResponseBucketResult responseBucketInner2 =
-        KaldbSearch.ResponseBucketResult.newBuilder().setValue(responseBucketValue2).build();
+        KaldbSearch.ResponseBucketResult.newBuilder().setValue(KaldbSearch.Value.newBuilder().setLongValue(1002).build()).build();
 
     KaldbSearch.Value key2 = KaldbSearch.Value.newBuilder().setStringValue("key2").build();
     List<KaldbSearch.Value> keys2 = new ArrayList<>();

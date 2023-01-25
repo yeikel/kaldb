@@ -170,7 +170,7 @@ public class SearchResultUtils {
     if (responseBucketResult.hasAggregation()) {
       return fromProtoResponseAggregations(List.of(responseBucketResult.getAggregation())).get(0);
     } else if (responseBucketResult.hasValue()) {
-      return responseBucketResult.getValue().getValue();
+      return responseBucketResult.getValue();
     } else {
       throw new IllegalArgumentException();
     }
@@ -237,12 +237,7 @@ public class SearchResultUtils {
               KaldbSearch.ResponseBucketResult.Builder responseBucketResult =
                   KaldbSearch.ResponseBucketResult.newBuilder();
 
-              if (responseBucketValue.getValue() instanceof Long) {
-                responseBucketResult.setValue(
-                    KaldbSearch.ResponseBucketValue.newBuilder()
-                        .setValue((Long) responseBucketValue.getValue())
-                        .build());
-              } else if (responseBucketValue.getValue() instanceof ResponseAggregation) {
+              if (responseBucketValue.getValue() instanceof ResponseAggregation) {
                 ResponseAggregation responseAggregation =
                     (ResponseAggregation) responseBucketValue.getValue();
                 responseBucketResult.setAggregation(
@@ -254,8 +249,9 @@ public class SearchResultUtils {
                         .addAllBuckets(
                             toResponseBucketsProto(responseAggregation.getResponseBuckets()))
                         .build());
+
               } else {
-                throw new IllegalArgumentException();
+                responseBucketResult.setValue(objectToProtoValue(responseBucketValue.getValue()));
               }
               resultMap.put(responseBucketValue.getKey(), responseBucketResult.build());
             });

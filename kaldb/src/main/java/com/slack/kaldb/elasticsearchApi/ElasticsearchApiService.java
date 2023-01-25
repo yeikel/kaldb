@@ -32,6 +32,7 @@ import java.io.IOException;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -134,10 +135,15 @@ public class ElasticsearchApiService {
                         responseAggregation
                             .getBucketsList()
                             .stream()
-                            .map(
-                                responseBucket ->
-                                    new AggregationBucketResponse(
-                                        getKey(responseBucket), responseBucket.getDocCount()))
+                            .map((responseBucket) -> {
+                                  Map<String, Map<String, Object>> nested  = new HashMap<>();
+                                  responseBucket.getValuesMap().forEach((key, value) -> {
+                                    // todo - this isn't quite right
+                                    nested.put("1", Map.of("value", SearchResultUtils.fromValue(value.getValue())));
+                                  });
+                                  return new AggregationBucketResponse(
+                                        getKey(responseBucket), responseBucket.getDocCount(), nested);
+                                })
                             .collect(Collectors.toList())));
               });
 

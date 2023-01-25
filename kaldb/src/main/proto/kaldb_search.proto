@@ -83,14 +83,10 @@ message ResponseBuckets {
   map<string, ResponseBucketResult> values = 3;
 }
 
-message ResponseBucketValue {
-  int64 value = 1;
-}
-
 message ResponseBucketResult {
   oneof kind {
     ResponseAggregation aggregation = 1;
-    ResponseBucketValue value = 2;
+    Value value = 2;
   }
 }
 

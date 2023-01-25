@@ -16,21 +16,38 @@
  */
 package com.slack.kaldb.logstore.search.aggregations;
 
-import java.io.IOException;
+public abstract class FacetRequest {
 
-public class CountAgg extends SimpleAggValueSource {
-  public CountAgg() {
-    super("count", null);
-  }
+  public static enum SortDirection {
+    asc(-1),
+    desc(1);
 
-  @Override
-  public SlotAcc createSlotAcc(FacetContext fcontext, long numDocs, int numSlots)
-      throws IOException {
-    return new SlotAcc.CountSlotArrAcc(fcontext, numSlots);
-  }
+    private final int multiplier;
 
-  @Override
-  public FacetMerger createFacetMerger(Object prototype) {
-    return new FacetModule.FacetLongMerger();
+    private SortDirection(int multiplier) {
+      this.multiplier = multiplier;
+    }
+
+    public static SortDirection fromObj(Object direction) {
+      if (direction == null) {
+        // should we just default either to desc/asc??
+        throw new SolrException(SolrException.ErrorCode.BAD_REQUEST, "Missing Sort direction");
+      }
+
+      switch (direction.toString()) {
+        case "asc":
+          return asc;
+        case "desc":
+          return desc;
+        default:
+          throw new SolrException(
+              SolrException.ErrorCode.BAD_REQUEST, "Unknown Sort direction '" + direction + "'");
+      }
+    }
+
+    // asc==-1, desc==1
+    public int getMultiplier() {
+      return multiplier;
+    }
   }
 }
