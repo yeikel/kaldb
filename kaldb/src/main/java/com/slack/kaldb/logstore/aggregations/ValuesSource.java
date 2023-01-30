@@ -32,11 +32,14 @@
 package com.slack.kaldb.logstore.aggregations;
 
 //import org.apache.lucene.index.DirectoryReader;
+import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.DocValues;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.LeafReaderContext;
 //import org.apache.lucene.index.OrdinalMap;
+import org.apache.lucene.index.OrdinalMap;
 import org.apache.lucene.index.SortedNumericDocValues;
+import org.apache.lucene.index.SortedSetDocValues;
 //import org.apache.lucene.index.SortedSetDocValues;
 //import org.apache.lucene.search.IndexSearcher;
 //import org.apache.lucene.search.Scorable;
@@ -65,6 +68,7 @@ import org.apache.lucene.index.SortedNumericDocValues;
 
 import java.io.IOException;
 import java.util.function.Function;
+import java.util.function.LongUnaryOperator;
 
 //import static com.slack.kaldb.logstore.aggregations.FieldData.emptySortedBinary;
 //import static com.slack.kaldb.logstore.aggregations.FieldData.emptySortedNumericDoubles;
@@ -109,113 +113,113 @@ public abstract class ValuesSource {
      *
      * @opensearch.internal
      */
-//    public static class Range extends ValuesSource {
-//        private final RangeType rangeType;
-//        protected final IndexFieldData<?> indexFieldData;
-//
-//        public Range(IndexFieldData<?> indexFieldData, RangeType rangeType) {
-//            this.indexFieldData = indexFieldData;
-//            this.rangeType = rangeType;
-//        }
-//
-//        @Override
-//        public SortedBinaryDocValues bytesValues(LeafReaderContext context) {
-//            return indexFieldData.load(context).getBytesValues();
-//        }
-//
-//        @Override
-//        public DocValueBits docsWithValue(LeafReaderContext context) throws IOException {
-//            final SortedBinaryDocValues bytes = bytesValues(context);
-//            return org.opensearch.index.fielddata.FieldData.docsWithValue(bytes);
-//        }
-//
-//        @Override
-//        public Function<Rounding, Prepared> roundingPreparer(IndexReader reader) throws IOException {
-//            // TODO lookup the min and max rounding when appropriate
-//            return Rounding::prepareForUnknown;
-//        }
-//
-//        public RangeType rangeType() {
-//            return rangeType;
-//        }
-//    }
-//
-//    /**
-//     * Bytes type
-//     *
-//     * @opensearch.internal
-//     */
-//    public abstract static class Bytes extends ValuesSource {
-//
-//        @Override
-//        public DocValueBits docsWithValue(LeafReaderContext context) throws IOException {
-//            final SortedBinaryDocValues bytes = bytesValues(context);
-//            return org.opensearch.index.fielddata.FieldData.docsWithValue(bytes);
-//        }
-//
-//        @Override
-//        public final Function<Rounding, Rounding.Prepared> roundingPreparer(IndexReader reader) throws IOException {
-//            throw new AggregationExecutionException("can't round a [BYTES]");
-//        }
-//
-//        /**
-//         * Provides ordinals for bytes
-//         *
-//         * @opensearch.internal
-//         */
-//        public abstract static class WithOrdinals extends Bytes {
-//
-//            public static final WithOrdinals EMPTY = new WithOrdinals() {
-//
-//                @Override
-//                public SortedSetDocValues ordinalsValues(LeafReaderContext context) {
-//                    return DocValues.emptySortedSet();
-//                }
-//
-//                @Override
-//                public SortedSetDocValues globalOrdinalsValues(LeafReaderContext context) {
-//                    return DocValues.emptySortedSet();
-//                }
-//
-//                @Override
-//                public SortedBinaryDocValues bytesValues(LeafReaderContext context) throws IOException {
-//                    return org.opensearch.index.fielddata.FieldData.emptySortedBinary();
-//                }
-//
-//                @Override
-//                public LongUnaryOperator globalOrdinalsMapping(LeafReaderContext context) throws IOException {
-//                    return LongUnaryOperator.identity();
-//                }
-//
-//            };
-//
-//            @Override
-//            public DocValueBits docsWithValue(LeafReaderContext context) throws IOException {
-//                final SortedSetDocValues ordinals = ordinalsValues(context);
-//                return org.opensearch.index.fielddata.FieldData.docsWithValue(ordinals);
-//            }
-//
-//            public abstract SortedSetDocValues ordinalsValues(LeafReaderContext context) throws IOException;
-//
-//            public abstract SortedSetDocValues globalOrdinalsValues(LeafReaderContext context) throws IOException;
-//
-//            /**
-//             * Whether this values source is able to provide a mapping between global and segment ordinals,
-//             * by returning the underlying {@link OrdinalMap}. If this method returns false, then calling
-//             * {@link #globalOrdinalsMapping} will result in an {@link UnsupportedOperationException}.
-//             */
-//            public boolean supportsGlobalOrdinalsMapping() {
-//                return true;
-//            }
-//
-//            @Override
-//            public boolean hasGlobalOrdinals() {
-//                return true;
-//            }
-//
-//            /** Returns a mapping from segment ordinals to global ordinals. */
-//            public abstract LongUnaryOperator globalOrdinalsMapping(LeafReaderContext context) throws IOException;
-//
+    public static class Range extends ValuesSource {
+        private final RangeType rangeType;
+        protected final IndexFieldData<?> indexFieldData;
+
+        public Range(IndexFieldData<?> indexFieldData, RangeType rangeType) {
+            this.indexFieldData = indexFieldData;
+            this.rangeType = rangeType;
+        }
+
+        @Override
+        public SortedBinaryDocValues bytesValues(LeafReaderContext context) {
+            return indexFieldData.load(context).getBytesValues();
+        }
+
+        @Override
+        public DocValueBits docsWithValue(LeafReaderContext context) throws IOException {
+            final SortedBinaryDocValues bytes = bytesValues(context);
+            return com.slack.kaldb.logstore.aggregations.FieldData.docsWithValue(bytes);
+        }
+
+        @Override
+        public Function<Rounding, Rounding.Prepared> roundingPreparer(IndexReader reader) throws IOException {
+            // TODO lookup the min and max rounding when appropriate
+            return Rounding::prepareForUnknown;
+        }
+
+        public RangeType rangeType() {
+            return rangeType;
+        }
+    }
+
+    /**
+     * Bytes type
+     *
+     * @opensearch.internal
+     */
+    public abstract static class Bytes extends ValuesSource {
+
+        @Override
+        public DocValueBits docsWithValue(LeafReaderContext context) throws IOException {
+            final SortedBinaryDocValues bytes = bytesValues(context);
+            return com.slack.kaldb.logstore.aggregations.FieldData.docsWithValue(bytes);
+        }
+
+        @Override
+        public final Function<Rounding, Rounding.Prepared> roundingPreparer(IndexReader reader) throws IOException {
+            throw new AggregationExecutionException("can't round a [BYTES]");
+        }
+
+        /**
+         * Provides ordinals for bytes
+         *
+         * @opensearch.internal
+         */
+        public abstract static class WithOrdinals extends Bytes {
+
+            public static final WithOrdinals EMPTY = new WithOrdinals() {
+
+                @Override
+                public SortedSetDocValues ordinalsValues(LeafReaderContext context) {
+                    return DocValues.emptySortedSet();
+                }
+
+                @Override
+                public SortedSetDocValues globalOrdinalsValues(LeafReaderContext context) {
+                    return DocValues.emptySortedSet();
+                }
+
+                @Override
+                public SortedBinaryDocValues bytesValues(LeafReaderContext context) throws IOException {
+                    return com.slack.kaldb.logstore.aggregations.FieldData.emptySortedBinary();
+                }
+
+                @Override
+                public LongUnaryOperator globalOrdinalsMapping(LeafReaderContext context) throws IOException {
+                    return LongUnaryOperator.identity();
+                }
+
+            };
+
+            @Override
+            public DocValueBits docsWithValue(LeafReaderContext context) throws IOException {
+                final SortedSetDocValues ordinals = ordinalsValues(context);
+                return com.slack.kaldb.logstore.aggregations.FieldData.docsWithValue(ordinals);
+            }
+
+            public abstract SortedSetDocValues ordinalsValues(LeafReaderContext context) throws IOException;
+
+            public abstract SortedSetDocValues globalOrdinalsValues(LeafReaderContext context) throws IOException;
+
+            /**
+             * Whether this values source is able to provide a mapping between global and segment ordinals,
+             * by returning the underlying {@link OrdinalMap}. If this method returns false, then calling
+             * {@link #globalOrdinalsMapping} will result in an {@link UnsupportedOperationException}.
+             */
+            public boolean supportsGlobalOrdinalsMapping() {
+                return true;
+            }
+
+            @Override
+            public boolean hasGlobalOrdinals() {
+                return true;
+            }
+
+            /** Returns a mapping from segment ordinals to global ordinals. */
+            public abstract LongUnaryOperator globalOrdinalsMapping(LeafReaderContext context) throws IOException;
+
 //            public long globalMaxOrd(IndexSearcher indexSearcher) throws IOException {
 //                IndexReader indexReader = indexSearcher.getIndexReader();
 //                if (indexReader.leaves().isEmpty()) {
@@ -226,78 +230,78 @@ public abstract class ValuesSource {
 //                    return values.getValueCount();
 //                }
 //            }
-//
-//            /**
-//             * Field data for the bytes values source
-//             *
-//             * @opensearch.internal
-//             */
-//            public static class FieldData extends WithOrdinals {
-//
-//                protected final IndexOrdinalsFieldData indexFieldData;
-//
-//                public FieldData(IndexOrdinalsFieldData indexFieldData) {
-//                    this.indexFieldData = indexFieldData;
-//                }
-//
-//                @Override
-//                public SortedBinaryDocValues bytesValues(LeafReaderContext context) {
-//                    final LeafOrdinalsFieldData atomicFieldData = indexFieldData.load(context);
-//                    return atomicFieldData.getBytesValues();
-//                }
-//
-//                @Override
-//                public SortedSetDocValues ordinalsValues(LeafReaderContext context) {
-//                    final LeafOrdinalsFieldData atomicFieldData = indexFieldData.load(context);
-//                    return atomicFieldData.getOrdinalsValues();
-//                }
-//
-//                @Override
-//                public SortedSetDocValues globalOrdinalsValues(LeafReaderContext context) {
-//                    final IndexOrdinalsFieldData global = indexFieldData.loadGlobal((DirectoryReader) context.parent.reader());
-//                    final LeafOrdinalsFieldData atomicFieldData = global.load(context);
-//                    return atomicFieldData.getOrdinalsValues();
-//                }
-//
-//                @Override
-//                public boolean supportsGlobalOrdinalsMapping() {
-//                    return indexFieldData.supportsGlobalOrdinalsMapping();
-//                }
-//
-//                @Override
-//                public LongUnaryOperator globalOrdinalsMapping(LeafReaderContext context) throws IOException {
-//                    final IndexOrdinalsFieldData global = indexFieldData.loadGlobal((DirectoryReader) context.parent.reader());
-//                    final OrdinalMap map = global.getOrdinalMap();
-//                    if (map == null) {
-//                        // segments and global ordinals are the same
-//                        return LongUnaryOperator.identity();
-//                    }
-//                    final org.apache.lucene.util.LongValues segmentToGlobalOrd = map.getGlobalOrds(context.ord);
-//                    return segmentToGlobalOrd::get;
-//                }
-//            }
-//        }
-//
-//        /**
-//         * Field data without ordinals
-//         *
-//         * @opensearch.internal
-//         */
-//        public static class FieldData extends Bytes {
-//
-//            protected final IndexFieldData<?> indexFieldData;
-//
-//            public FieldData(IndexFieldData<?> indexFieldData) {
-//                this.indexFieldData = indexFieldData;
-//            }
-//
-//            @Override
-//            public SortedBinaryDocValues bytesValues(LeafReaderContext context) {
-//                return indexFieldData.load(context).getBytesValues();
-//            }
-//
-//        }
-//
+
+            /**
+             * Field data for the bytes values source
+             *
+             * @opensearch.internal
+             */
+            public static class FieldData extends WithOrdinals {
+
+                protected final IndexOrdinalsFieldData indexFieldData;
+
+                public FieldData(IndexOrdinalsFieldData indexFieldData) {
+                    this.indexFieldData = indexFieldData;
+                }
+
+                @Override
+                public SortedBinaryDocValues bytesValues(LeafReaderContext context) {
+                    final LeafOrdinalsFieldData atomicFieldData = indexFieldData.load(context);
+                    return atomicFieldData.getBytesValues();
+                }
+
+                @Override
+                public SortedSetDocValues ordinalsValues(LeafReaderContext context) {
+                    final LeafOrdinalsFieldData atomicFieldData = indexFieldData.load(context);
+                    return atomicFieldData.getOrdinalsValues();
+                }
+
+                @Override
+                public SortedSetDocValues globalOrdinalsValues(LeafReaderContext context) {
+                    final IndexOrdinalsFieldData global = indexFieldData.loadGlobal((DirectoryReader) context.parent.reader());
+                    final LeafOrdinalsFieldData atomicFieldData = global.load(context);
+                    return atomicFieldData.getOrdinalsValues();
+                }
+
+                @Override
+                public boolean supportsGlobalOrdinalsMapping() {
+                    return indexFieldData.supportsGlobalOrdinalsMapping();
+                }
+
+                @Override
+                public LongUnaryOperator globalOrdinalsMapping(LeafReaderContext context) throws IOException {
+                    final IndexOrdinalsFieldData global = indexFieldData.loadGlobal((DirectoryReader) context.parent.reader());
+                    final OrdinalMap map = global.getOrdinalMap();
+                    if (map == null) {
+                        // segments and global ordinals are the same
+                        return LongUnaryOperator.identity();
+                    }
+                    final org.apache.lucene.util.LongValues segmentToGlobalOrd = map.getGlobalOrds(context.ord);
+                    return segmentToGlobalOrd::get;
+                }
+            }
+        }
+
+        /**
+         * Field data without ordinals
+         *
+         * @opensearch.internal
+         */
+        public static class FieldData extends Bytes {
+
+            protected final IndexFieldData<?> indexFieldData;
+
+            public FieldData(IndexFieldData<?> indexFieldData) {
+                this.indexFieldData = indexFieldData;
+            }
+
+            @Override
+            public SortedBinaryDocValues bytesValues(LeafReaderContext context) {
+                return indexFieldData.load(context).getBytesValues();
+            }
+
+        }
+
 //        /**
 //         * {@link ValuesSource} implementation for stand alone scripts returning a Bytes value
 //         *
@@ -321,8 +325,8 @@ public abstract class ValuesSource {
 //                return script.needs_score();
 //            }
 //        }
-//
-//        // No need to implement ReaderContextAware here, the delegate already takes care of updating data structures
+
+        // No need to implement ReaderContextAware here, the delegate already takes care of updating data structures
 //        /**
 //         * {@link ValuesSource} subclass for Bytes fields with a Value Script applied
 //         *
@@ -391,7 +395,7 @@ public abstract class ValuesSource {
 //                }
 //            }
 //        }
-//    }
+    }
 
     /**
      * Numeric values source type
@@ -569,34 +573,34 @@ public abstract class ValuesSource {
          *
          * @opensearch.internal
          */
-//        public static class FieldData extends Numeric {
-//
-//            protected final IndexNumericFieldData indexFieldData;
-//
-//            public FieldData(IndexNumericFieldData indexFieldData) {
-//                this.indexFieldData = indexFieldData;
-//            }
-//
-//            @Override
-//            public boolean isFloatingPoint() {
-//                return indexFieldData.getNumericType().isFloatingPoint();
-//            }
-//
-//            @Override
-//            public SortedBinaryDocValues bytesValues(LeafReaderContext context) {
-//                return indexFieldData.load(context).getBytesValues();
-//            }
-//
-//            @Override
-//            public SortedNumericDocValues longValues(LeafReaderContext context) {
-//                return indexFieldData.load(context).getLongValues();
-//            }
-//
-//            @Override
-//            public SortedNumericDoubleValues doubleValues(LeafReaderContext context) {
-//                return indexFieldData.load(context).getDoubleValues();
-//            }
-//        }
+        public static class FieldData extends Numeric {
+
+            protected final IndexNumericFieldData indexFieldData;
+
+            public FieldData(IndexNumericFieldData indexFieldData) {
+                this.indexFieldData = indexFieldData;
+            }
+
+            @Override
+            public boolean isFloatingPoint() {
+                return indexFieldData.getNumericType().isFloatingPoint();
+            }
+
+            @Override
+            public SortedBinaryDocValues bytesValues(LeafReaderContext context) {
+                return indexFieldData.load(context).getBytesValues();
+            }
+
+            @Override
+            public SortedNumericDocValues longValues(LeafReaderContext context) {
+                return indexFieldData.load(context).getLongValues();
+            }
+
+            @Override
+            public SortedNumericDoubleValues doubleValues(LeafReaderContext context) {
+                return indexFieldData.load(context).getDoubleValues();
+            }
+        }
 
         /**
          * {@link ValuesSource} implementation for stand alone scripts returning a Numeric value

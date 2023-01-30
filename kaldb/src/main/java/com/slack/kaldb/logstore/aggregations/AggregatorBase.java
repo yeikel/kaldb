@@ -32,6 +32,7 @@
 package com.slack.kaldb.logstore.aggregations;
 
 import org.apache.lucene.index.LeafReaderContext;
+import org.apache.lucene.index.SortedNumericDocValues;
 import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.search.ScoreMode;
 //import org.opensearch.common.breaker.CircuitBreaker;
@@ -88,6 +89,7 @@ public abstract class AggregatorBase extends Aggregator {
 //        SearchContext context,
         Aggregator parent,
         CardinalityUpperBound subAggregatorCardinality,
+        Aggregator[] subAggregators,
         Map<String, Object> metadata
     ) throws IOException {
         this.name = name;
@@ -97,7 +99,35 @@ public abstract class AggregatorBase extends Aggregator {
         this.breakerService = new NoneCircuitBreakerService();
 //        this.breakerService = context.bigArrays().breakerService();
 //        assert factories != null : "sub-factories provided to BucketAggregator must not be null, use AggragatorFactories.EMPTY instead";
-        this.subAggregators = List.of().toArray(new Aggregator[]{}); //factories.createSubAggregators(context, this, subAggregatorCardinality);
+        //this.subAggregators = List.of().toArray(new Aggregator[]{}); //factories.createSubAggregators(context, this, subAggregatorCardinality);
+        this.subAggregators = subAggregators;
+//        this.subAggregators = List.of(new AvgAggregator(
+//            "foo",
+//            new ValuesSource.Numeric() {
+//                @Override
+//                public boolean isFloatingPoint() {
+//                    return false;
+//                }
+//
+//                @Override
+//                public SortedNumericDocValues longValues(LeafReaderContext context) throws IOException {
+//                    return null;
+//                }
+//
+//                @Override
+//                public SortedNumericDoubleValues doubleValues(LeafReaderContext context) throws IOException {
+//                    return null;
+//                }
+//
+//                @Override
+//                public SortedBinaryDocValues bytesValues(LeafReaderContext context) throws IOException {
+//                    return null;
+//                }
+//            },
+//            null,
+//            Map.of("bar", "baz")
+//        )).toArray(Aggregator[]::new);
+
 //        context.addReleasable(this);
 //        final SearchShardTarget shardTarget = context.shardTarget();
         // Register a safeguard to highlight any invalid construction logic (call to this constructor without subsequent preCollection call)

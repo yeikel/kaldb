@@ -85,13 +85,14 @@ public class DateHistogramAggregator extends BucketsAggregator implements SizedB
         @Nullable LongBounds extendedBounds,
         @Nullable LongBounds hardBounds,
         ValuesSource.Numeric valuesSource,
+        Aggregator[] aggregators,
 //        ValuesSourceConfig valuesSourceConfig,
 //        SearchContext aggregationContext,
         Aggregator parent,
         CardinalityUpperBound cardinality,
         Map<String, Object> metadata
     ) throws IOException {
-        super(name, parent, CardinalityUpperBound.MANY, metadata);
+        super(name, aggregators, parent, CardinalityUpperBound.MANY, metadata);
         //super(name, factories, aggregationContext, parent, CardinalityUpperBound.MANY, metadata);
         this.rounding = rounding;
         this.preparedRounding = preparedRounding;

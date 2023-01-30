@@ -73,11 +73,12 @@ public abstract class BucketsAggregator extends AggregatorBase {
         String name,
 //        AggregatorFactories factories,
 //        SearchContext context,
+        Aggregator[] aggregators,
         Aggregator parent,
         CardinalityUpperBound bucketCardinality,
         Map<String, Object> metadata
     ) throws IOException {
-        super(name, parent, bucketCardinality, metadata);
+        super(name, parent, bucketCardinality, aggregators, metadata);
         //super(name, factories, context, parent, bucketCardinality, metadata);
         bigArrays = new BigArrays(PageCacheRecycler.NON_RECYCLING_INSTANCE, new NoneCircuitBreakerService(), "none");
         //bigArrays = context.bigArrays();
@@ -86,6 +87,7 @@ public abstract class BucketsAggregator extends AggregatorBase {
 //        } else {
             multiBucketConsumer = (count) -> {};
 //        }
+
         docCounts = bigArrays.newLongArray(1, true);
         docCountProvider = new DocCountProvider();
     }

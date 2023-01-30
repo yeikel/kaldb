@@ -1,5 +1,6 @@
 package com.slack.kaldb.logstore.search;
 
+import static com.slack.kaldb.logstore.LogMessage.SystemField.TIME_SINCE_EPOCH;
 import static com.slack.kaldb.util.ArgValidationUtils.ensureNonEmptyString;
 import static com.slack.kaldb.util.ArgValidationUtils.ensureNonNullString;
 import static com.slack.kaldb.util.ArgValidationUtils.ensureTrue;
@@ -16,17 +17,28 @@ import com.slack.kaldb.histogram.NoOpHistogramImpl;
 import com.slack.kaldb.logstore.LogMessage;
 import com.slack.kaldb.logstore.LogMessage.SystemField;
 import com.slack.kaldb.logstore.LogWireMessage;
+import com.slack.kaldb.logstore.aggregations.Aggregator;
+import com.slack.kaldb.logstore.aggregations.AvgAggregator;
 import com.slack.kaldb.logstore.aggregations.BucketOrder;
 import com.slack.kaldb.logstore.aggregations.CardinalityUpperBound;
+import com.slack.kaldb.logstore.aggregations.CoreValuesSourceType;
 import com.slack.kaldb.logstore.aggregations.DateHistogramAggregator;
 import com.slack.kaldb.logstore.aggregations.DocValueBits;
+import com.slack.kaldb.logstore.aggregations.FieldContext;
+import com.slack.kaldb.logstore.aggregations.FieldData;
+import com.slack.kaldb.logstore.aggregations.IndexFieldData;
+import com.slack.kaldb.logstore.aggregations.IndexNumericFieldData;
 import com.slack.kaldb.logstore.aggregations.InternalAggregation;
 import com.slack.kaldb.logstore.aggregations.InternalDateHistogram;
+import com.slack.kaldb.logstore.aggregations.LeafNumericFieldData;
 import com.slack.kaldb.logstore.aggregations.Rounding;
+
 import com.slack.kaldb.logstore.aggregations.SortedBinaryDocValues;
 import com.slack.kaldb.logstore.aggregations.SortedNumericDoubleValues;
+import com.slack.kaldb.logstore.aggregations.SortedNumericIndexFieldData;
 import com.slack.kaldb.logstore.aggregations.ValuesSource;
 //import com.slack.kaldb.logstore.aggregations.ValuesSourceConfig;
+import com.slack.kaldb.logstore.aggregations.ValuesSourceType;
 import com.slack.kaldb.util.JsonUtil;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -139,6 +151,41 @@ public class LogIndexSearcherImpl implements LogIndexSearcher<LogMessage> {
 
         Rounding.Prepared prepared = Rounding.builder(Rounding.DateTimeUnit.DAY_OF_MONTH).build().prepareForUnknown();
 
+
+        AvgAggregator avgAggregator = new AvgAggregator(
+            "foo",
+            new ValuesSource.Numeric() {
+              @Override
+              public boolean isFloatingPoint() {
+                return false;
+              }
+
+              @Override
+              public SortedNumericDocValues longValues(LeafReaderContext context) throws IOException {
+                return null;
+              }
+
+              @Override
+              public SortedNumericDoubleValues doubleValues(LeafReaderContext context) throws IOException {
+                //DocValues.getNumeric(context.reader(), "_doc_count");
+
+                //return DocValues.getSortedNumeric(context.reader(), "").;
+                IndexNumericFieldData field = new SortedNumericIndexFieldData("doubleproperty", IndexNumericFieldData.NumericType.DOUBLE);
+                return new FieldData(field).doubleValues(context);
+              }
+
+              @Override
+              public SortedBinaryDocValues bytesValues(LeafReaderContext context) throws IOException {
+                return null;
+              }
+            },
+//            CoreValuesSourceType.NUMERIC.getField(new FieldContext("doubleproperty", doubleField)),
+            null,
+            Map.of("bar", "baz")
+        );
+
+
+        SortedNumericIndexFieldData timestamp = new SortedNumericIndexFieldData.Builder(TIME_SINCE_EPOCH.name(), IndexNumericFieldData.NumericType.LONG).build(null, null);
         DateHistogramAggregator dateHistogramAggregator = new DateHistogramAggregator(
             "name",
             Rounding.builder(Rounding.DateTimeUnit.QUARTER_OF_YEAR).build(),
@@ -170,22 +217,16 @@ public class LogIndexSearcherImpl implements LogIndexSearcher<LogMessage> {
               public SortedBinaryDocValues bytesValues(LeafReaderContext context) throws IOException {
                 return null;
               }
-
-              @Override
-              public DocValueBits docsWithValue(LeafReaderContext context) throws IOException {
-                return null;
-              }
-
-              @Override
-              public Function<Rounding, Rounding.Prepared> roundingPreparer(IndexReader reader) throws IOException {
-                return null;
-              }
             },
+//        (ValuesSource.Numeric) CoreValuesSourceType.NUMERIC.getField(new FieldContext(TIME_SINCE_EPOCH.name(), timestamp)),
+//                .NUMERIC.getField(new FieldContext("foo", null, null)),
+            List.of(avgAggregator).toArray(Aggregator[]::new),
           null,
             CardinalityUpperBound.ONE,
             Map.of("foo", "bar")
         );
 
+        avgAggregator.preCollection();
         dateHistogramAggregator.preCollection();
 
         CollectorManager<DateHistogramAggregator, DateHistogramAggregator> dateHistogramAggregatorCollectorManager = new CollectorManager<DateHistogramAggregator, DateHistogramAggregator>() {
@@ -290,7 +331,7 @@ public class LogIndexSearcherImpl implements LogIndexSearcher<LogMessage> {
   private CollectorManager<TopFieldCollector, TopFieldDocs> buildTopFieldCollector(
       int howMany, int totalHitsThreshold) {
     if (howMany > 0) {
-      SortField sortField = new SortField(SystemField.TIME_SINCE_EPOCH.fieldName, Type.LONG, true);
+      SortField sortField = new SortField(TIME_SINCE_EPOCH.fieldName, Type.LONG, true);
       return TopFieldCollector.createSharedManager(
           new Sort(sortField), howMany, null, totalHitsThreshold);
     } else {
@@ -338,7 +379,7 @@ public class LogIndexSearcherImpl implements LogIndexSearcher<LogMessage> {
     // Occur.MUST);
     queryBuilder.add(
         LongPoint.newRangeQuery(
-            SystemField.TIME_SINCE_EPOCH.fieldName, startTimeMsEpoch, endTimeMsEpoch),
+            TIME_SINCE_EPOCH.fieldName, startTimeMsEpoch, endTimeMsEpoch),
         Occur.MUST);
     if (queryStr.length() > 0) {
       queryBuilder.add(buildQueryParser().parse(queryStr), Occur.MUST);

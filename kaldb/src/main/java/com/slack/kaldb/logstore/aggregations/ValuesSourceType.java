@@ -85,7 +85,8 @@ public interface ValuesSourceType {
      * @param script - Optional script that might be applied over the field
      * @return - Field specialization of the base {@link ValuesSource}
      */
-//    ValuesSource getField(FieldContext fieldContext, AggregationScript.LeafFactory script);
+    //ValuesSource getField(FieldContext fieldContext, AggregationScript.LeafFactory script);
+    ValuesSource getField(FieldContext fieldContext); //, AggregationScript.LeafFactory script);
 
     /**
      * Apply the given missing value to an already-constructed {@link ValuesSource}.  Types which do not support missing values should throw

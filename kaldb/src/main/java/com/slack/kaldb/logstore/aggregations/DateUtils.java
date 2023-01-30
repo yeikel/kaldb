@@ -35,6 +35,8 @@ package com.slack.kaldb.logstore.aggregations;
 //import org.joda.time.DateTimeZone;
 //import org.opensearch.common.logging.DeprecationLogger;
 
+import org.joda.time.DateTimeZone;
+
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -61,16 +63,16 @@ import static com.slack.kaldb.logstore.aggregations.DateUtilsRounding.utcMillisA
  * @opensearch.internal
  */
 public class DateUtils {
-//    public static DateTimeZone zoneIdToDateTimeZone(ZoneId zoneId) {
-//        if (zoneId == null) {
-//            return null;
-//        }
-//        if (zoneId instanceof ZoneOffset) {
-//            // the id for zoneoffset is not ISO compatible, so cannot be read by ZoneId.of
-//            return DateTimeZone.forOffsetMillis(((ZoneOffset) zoneId).getTotalSeconds() * 1000);
-//        }
-//        return DateTimeZone.forID(zoneId.getId());
-//    }
+    public static DateTimeZone zoneIdToDateTimeZone(ZoneId zoneId) {
+        if (zoneId == null) {
+            return null;
+        }
+        if (zoneId instanceof ZoneOffset) {
+            // the id for zoneoffset is not ISO compatible, so cannot be read by ZoneId.of
+            return DateTimeZone.forOffsetMillis(((ZoneOffset) zoneId).getTotalSeconds() * 1000);
+        }
+        return DateTimeZone.forID(zoneId.getId());
+    }
 
 //    private static final DeprecationLogger deprecationLogger = DeprecationLogger.getLogger(DateUtils.class);
     // pkg private for tests
@@ -208,28 +210,28 @@ public class DateUtils {
         DEPRECATED_LONG_TIMEZONES = Collections.unmodifiableMap(tzs);
     }
 
-//    public static ZoneId dateTimeZoneToZoneId(DateTimeZone timeZone) {
-//        if (timeZone == null) {
-//            return null;
-//        }
-//        if (DateTimeZone.UTC.equals(timeZone)) {
-//            return ZoneOffset.UTC;
-//        }
-//
-//        return of(timeZone.getID());
-//    }
-//
-//    public static ZoneId of(String zoneId) {
-//        String deprecatedId = DEPRECATED_SHORT_TIMEZONES.get(zoneId);
-//        if (deprecatedId != null) {
+    public static ZoneId dateTimeZoneToZoneId(DateTimeZone timeZone) {
+        if (timeZone == null) {
+            return null;
+        }
+        if (DateTimeZone.UTC.equals(timeZone)) {
+            return ZoneOffset.UTC;
+        }
+
+        return of(timeZone.getID());
+    }
+
+    public static ZoneId of(String zoneId) {
+        String deprecatedId = DEPRECATED_SHORT_TIMEZONES.get(zoneId);
+        if (deprecatedId != null) {
 //            deprecationLogger.deprecate(
 //                "timezone_" + zoneId,
 //                "Use of short timezone id " + zoneId + " is deprecated. Use " + deprecatedId + " instead"
 //            );
-//            return ZoneId.of(deprecatedId);
-//        }
-//        return ZoneId.of(zoneId).normalized();
-//    }
+            return ZoneId.of(deprecatedId);
+        }
+        return ZoneId.of(zoneId).normalized();
+    }
 
     static final Instant MAX_NANOSECOND_INSTANT = Instant.parse("2262-04-11T23:47:16.854775807Z");
 

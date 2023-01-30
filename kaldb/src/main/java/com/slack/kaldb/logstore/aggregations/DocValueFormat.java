@@ -190,46 +190,47 @@ public interface DocValueFormat { //extends NamedWriteable {
         }
     };
 
-//    static DocValueFormat withNanosecondResolution(final DocValueFormat format) {
-//        if (format instanceof DateTime) {
-//            DateTime dateTime = (DateTime) format;
+    static DocValueFormat withNanosecondResolution(final DocValueFormat format) {
+        if (format instanceof DateTime) {
+            DateTime dateTime = (DateTime) format;
+            return new DateTime(dateTime.formatter, dateTime.timeZone); //}, DateFieldMapper.Resolution.NANOSECONDS);
 //            return new DateTime(dateTime.formatter, dateTime.timeZone, DateFieldMapper.Resolution.NANOSECONDS);
-//        } else {
-//            throw new IllegalArgumentException("trying to convert a known date time formatter to a nanosecond one, wrong field used?");
-//        }
-//    }
+        } else {
+            throw new IllegalArgumentException("trying to convert a known date time formatter to a nanosecond one, wrong field used?");
+        }
+    }
 
     /**
      * Date time doc value format
      *
      * @opensearch.internal
      */
-//    final class DateTime implements DocValueFormat {
-//
-//        public static final String NAME = "date_time";
-//
-//        final DateFormatter formatter;
-//        final ZoneId timeZone;
-//        private final DateMathParser parser;
+    final class DateTime implements DocValueFormat {
+
+        public static final String NAME = "date_time";
+
+        final DateFormatter formatter;
+        final ZoneId timeZone;
+        private final DateMathParser parser;
 //        final DateFieldMapper.Resolution resolution;
-//
-//        public DateTime(DateFormatter formatter, ZoneId timeZone, DateFieldMapper.Resolution resolution) {
-//            this.formatter = formatter;
-//            this.timeZone = Objects.requireNonNull(timeZone);
-//            this.parser = formatter.toDateMathParser();
+
+        public DateTime(DateFormatter formatter, ZoneId timeZone) {//, DateFieldMapper.Resolution resolution) {
+            this.formatter = formatter;
+            this.timeZone = Objects.requireNonNull(timeZone);
+            this.parser = formatter.toDateMathParser();
 //            this.resolution = resolution;
+        }
+
+//        public DateTime(StreamInput in) throws IOException {
+//            String datePattern = in.readString();
+//            String zoneId = in.readString();
+//            this.timeZone = ZoneId.of(zoneId);
+//            this.resolution = DateFieldMapper.Resolution.ofOrdinal(in.readVInt());
+//            final boolean isJoda = in.readBoolean();
+//            this.formatter = isJoda ? Joda.forPattern(datePattern) : DateFormatter.forPattern(datePattern);
+//            this.parser = formatter.toDateMathParser();
 //        }
-//
-////        public DateTime(StreamInput in) throws IOException {
-////            String datePattern = in.readString();
-////            String zoneId = in.readString();
-////            this.timeZone = ZoneId.of(zoneId);
-////            this.resolution = DateFieldMapper.Resolution.ofOrdinal(in.readVInt());
-////            final boolean isJoda = in.readBoolean();
-////            this.formatter = isJoda ? Joda.forPattern(datePattern) : DateFormatter.forPattern(datePattern);
-////            this.parser = formatter.toDateMathParser();
-////        }
-//
+
 //        @Override
 //        public String getWriteableName() {
 //            return NAME;
@@ -243,36 +244,39 @@ public interface DocValueFormat { //extends NamedWriteable {
 //            // in order not to loose information if the formatter is a joda we send a flag
 //            out.writeBoolean(formatter instanceof JodaDateFormatter);// todo pg consider refactor to isJoda method..
 //        }
-//
-//        public DateMathParser getDateMathParser() {
-//            return parser;
-//        }
-//
-//        @Override
-//        public String format(long value) {
+
+        public DateMathParser getDateMathParser() {
+            return parser;
+        }
+
+        @Override
+        public String format(long value) {
+            throw new IllegalArgumentException("NOT IMPLEMENTED");
 //            return formatter.format(resolution.toInstant(value).atZone(timeZone));
-//        }
-//
-//        @Override
-//        public String format(double value) {
-//            return format((long) value);
-//        }
-//
-//        @Override
-//        public long parseLong(String value, boolean roundUp, LongSupplier now) {
+        }
+
+        @Override
+        public String format(double value) {
+            return format((long) value);
+        }
+
+        @Override
+        public long parseLong(String value, boolean roundUp, LongSupplier now) {
+            throw new IllegalArgumentException("NOT IMPLEMENTED");
+
 //            return resolution.convert(parser.parse(value, now, roundUp, timeZone));
-//        }
-//
-//        @Override
-//        public double parseDouble(String value, boolean roundUp, LongSupplier now) {
-//            return parseLong(value, roundUp, now);
-//        }
-//
+        }
+
+        @Override
+        public double parseDouble(String value, boolean roundUp, LongSupplier now) {
+            return parseLong(value, roundUp, now);
+        }
+
 //        @Override
 //        public String toString() {
 //            return "DocValueFormat.DateTime(" + formatter + ", " + timeZone + ", " + resolution + ")";
 //        }
-//    }
+    }
 
 //    DocValueFormat GEOHASH = new DocValueFormat() {
 //
