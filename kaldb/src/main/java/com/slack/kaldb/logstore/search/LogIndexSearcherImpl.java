@@ -8,23 +8,45 @@ import brave.ScopedSpan;
 import brave.Tracing;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Stopwatch;
+import com.slack.kaldb.elasticsearchApi.searchRequest.aggregations.DateHistogramAggregation;
 import com.slack.kaldb.histogram.FixedIntervalHistogramImpl;
 import com.slack.kaldb.histogram.Histogram;
+import com.slack.kaldb.histogram.HistogramBucket;
 import com.slack.kaldb.histogram.NoOpHistogramImpl;
 import com.slack.kaldb.logstore.LogMessage;
 import com.slack.kaldb.logstore.LogMessage.SystemField;
 import com.slack.kaldb.logstore.LogWireMessage;
+import com.slack.kaldb.logstore.aggregations.BucketOrder;
+import com.slack.kaldb.logstore.aggregations.CardinalityUpperBound;
+import com.slack.kaldb.logstore.aggregations.DateHistogramAggregator;
+import com.slack.kaldb.logstore.aggregations.DocValueBits;
+import com.slack.kaldb.logstore.aggregations.InternalAggregation;
+import com.slack.kaldb.logstore.aggregations.InternalDateHistogram;
+import com.slack.kaldb.logstore.aggregations.Rounding;
+import com.slack.kaldb.logstore.aggregations.SortedBinaryDocValues;
+import com.slack.kaldb.logstore.aggregations.SortedNumericDoubleValues;
+import com.slack.kaldb.logstore.aggregations.ValuesSource;
+//import com.slack.kaldb.logstore.aggregations.ValuesSourceConfig;
 import com.slack.kaldb.util.JsonUtil;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
+
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.LongPoint;
 import org.apache.lucene.index.DirectoryReader;
+import org.apache.lucene.index.DocValues;
+import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.index.LeafReaderContext;
+import org.apache.lucene.index.NumericDocValues;
+import org.apache.lucene.index.SortedNumericDocValues;
 import org.apache.lucene.queryparser.classic.ParseException;
 import org.apache.lucene.queryparser.classic.QueryParser;
 import org.apache.lucene.search.BooleanClause.Occur;
@@ -113,17 +135,88 @@ public class LogIndexSearcherImpl implements LogIndexSearcher<LogMessage> {
       IndexSearcher searcher = searcherManager.acquire();
       try {
         List<LogMessage> results;
-        Histogram histogram = new NoOpHistogramImpl();
+        //Histogram histogram = new NoOpHistogramImpl();
+
+        Rounding.Prepared prepared = Rounding.builder(Rounding.DateTimeUnit.DAY_OF_MONTH).build().prepareForUnknown();
+
+        DateHistogramAggregator dateHistogramAggregator = new DateHistogramAggregator(
+            "name",
+            Rounding.builder(Rounding.DateTimeUnit.QUARTER_OF_YEAR).build(),
+            prepared,
+            BucketOrder.key(true),
+            true,
+            10,
+            null,
+            null,
+            new ValuesSource.Numeric() {
+              @Override
+              public boolean isFloatingPoint() {
+                return false;
+              }
+
+              @Override
+              public SortedNumericDocValues longValues(LeafReaderContext context) throws IOException {
+                NumericDocValues values = context.reader().getNumericDocValues(SystemField.TIME_SINCE_EPOCH.fieldName);
+                return DocValues.singleton(values);
+                //return context.reader()
+              }
+
+              @Override
+              public SortedNumericDoubleValues doubleValues(LeafReaderContext context) throws IOException {
+                return null;
+              }
+
+              @Override
+              public SortedBinaryDocValues bytesValues(LeafReaderContext context) throws IOException {
+                return null;
+              }
+
+              @Override
+              public DocValueBits docsWithValue(LeafReaderContext context) throws IOException {
+                return null;
+              }
+
+              @Override
+              public Function<Rounding, Rounding.Prepared> roundingPreparer(IndexReader reader) throws IOException {
+                return null;
+              }
+            },
+          null,
+            CardinalityUpperBound.ONE,
+            Map.of("foo", "bar")
+        );
+
+        dateHistogramAggregator.preCollection();
+
+        CollectorManager<DateHistogramAggregator, DateHistogramAggregator> dateHistogramAggregatorCollectorManager = new CollectorManager<DateHistogramAggregator, DateHistogramAggregator>() {
+          @Override
+          public DateHistogramAggregator newCollector() throws IOException {
+            return dateHistogramAggregator;
+            //return null;
+          }
+
+          @Override
+          public DateHistogramAggregator reduce(Collection<DateHistogramAggregator> collectors) throws IOException {
+            if (collectors.size() == 1) {
+              return collectors.stream().findFirst().get();
+            }
+            //dateHistogramAggregator
+            return null;
+          }
+        };
+
 
         CollectorManager<StatsCollector, Histogram> statsCollector =
             buildStatsCollector(bucketCount, startTimeMsEpoch, endTimeMsEpoch);
+
+        InternalAggregation histogramAggregation = null;
 
         if (howMany > 0) {
           CollectorManager<TopFieldCollector, TopFieldDocs> topFieldCollector =
               buildTopFieldCollector(howMany, bucketCount > 0 ? Integer.MAX_VALUE : howMany);
           MultiCollectorManager collectorManager;
           if (bucketCount > 0) {
-            collectorManager = new MultiCollectorManager(topFieldCollector, statsCollector);
+            collectorManager = new MultiCollectorManager(topFieldCollector, dateHistogramAggregatorCollectorManager);
           } else {
             collectorManager = new MultiCollectorManager(topFieldCollector);
           }
@@ -135,19 +228,27 @@ public class LogIndexSearcherImpl implements LogIndexSearcher<LogMessage> {
             results.add(buildLogMessage(searcher, hit));
           }
           if (bucketCount > 0) {
-            histogram = ((Histogram) collector[1]);
+            histogramAggregation = ((DateHistogramAggregator) collector[1]).buildTopLevel();
           }
         } else {
           results = Collections.emptyList();
-          histogram = searcher.search(query, statsCollector);
+          searcher.search(query, statsCollector);
+//          histogram = searcher.search(query, statsCollector);
         }
+
+        if (histogramAggregation != null) {
+          histogramAggregation.getName();
+        }
+
+
 
         elapsedTime.stop();
         return new SearchResult<>(
             results,
             elapsedTime.elapsed(TimeUnit.MICROSECONDS),
-            bucketCount > 0 ? histogram.count() : results.size(),
-            histogram.getBuckets(),
+             results.size(),
+            List.of(),
+//            histogram.getBuckets(),
             0,
             0,
             1,
