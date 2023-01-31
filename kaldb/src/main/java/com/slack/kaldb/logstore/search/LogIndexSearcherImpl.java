@@ -31,6 +31,7 @@ import com.slack.kaldb.logstore.aggregations.IndexNumericFieldData;
 import com.slack.kaldb.logstore.aggregations.InternalAggregation;
 import com.slack.kaldb.logstore.aggregations.InternalDateHistogram;
 import com.slack.kaldb.logstore.aggregations.LeafNumericFieldData;
+import com.slack.kaldb.logstore.aggregations.MaxAggregator;
 import com.slack.kaldb.logstore.aggregations.Rounding;
 
 import com.slack.kaldb.logstore.aggregations.SortedBinaryDocValues;
@@ -149,8 +150,37 @@ public class LogIndexSearcherImpl implements LogIndexSearcher<LogMessage> {
         List<LogMessage> results;
         //Histogram histogram = new NoOpHistogramImpl();
 
-        Rounding.Prepared prepared = Rounding.builder(Rounding.DateTimeUnit.DAY_OF_MONTH).build().prepareForUnknown();
 
+
+
+        MaxAggregator maxAggregator = new MaxAggregator(
+            "bar",
+            new ValuesSource.Numeric() {
+
+              @Override
+              public boolean isFloatingPoint() {
+                return false;
+              }
+
+              @Override
+              public SortedNumericDocValues longValues(LeafReaderContext context) throws IOException {
+                return null;
+              }
+
+              @Override
+              public SortedNumericDoubleValues doubleValues(LeafReaderContext context) throws IOException {
+                IndexNumericFieldData field = new SortedNumericIndexFieldData("doubleproperty", IndexNumericFieldData.NumericType.DOUBLE);
+                return new FieldData(field).doubleValues(context);
+              }
+
+              @Override
+              public SortedBinaryDocValues bytesValues(LeafReaderContext context) throws IOException {
+                return null;
+              }
+            },
+            null,
+            Map.of("this", "that")
+        );
 
         AvgAggregator avgAggregator = new AvgAggregator(
             "foo",
@@ -185,7 +215,8 @@ public class LogIndexSearcherImpl implements LogIndexSearcher<LogMessage> {
         );
 
 
-        SortedNumericIndexFieldData timestamp = new SortedNumericIndexFieldData.Builder(TIME_SINCE_EPOCH.name(), IndexNumericFieldData.NumericType.LONG).build(null, null);
+        Rounding.Prepared prepared = Rounding.builder(Rounding.DateTimeUnit.DAY_OF_MONTH).build().prepareForUnknown();
+//        SortedNumericIndexFieldData timestamp = new SortedNumericIndexFieldData.Builder(TIME_SINCE_EPOCH.name(), IndexNumericFieldData.NumericType.LONG).build(null, null);
         DateHistogramAggregator dateHistogramAggregator = new DateHistogramAggregator(
             "name",
             Rounding.builder(Rounding.DateTimeUnit.QUARTER_OF_YEAR).build(),
@@ -220,12 +251,13 @@ public class LogIndexSearcherImpl implements LogIndexSearcher<LogMessage> {
             },
 //        (ValuesSource.Numeric) CoreValuesSourceType.NUMERIC.getField(new FieldContext(TIME_SINCE_EPOCH.name(), timestamp)),
 //                .NUMERIC.getField(new FieldContext("foo", null, null)),
-            List.of(avgAggregator).toArray(Aggregator[]::new),
+            List.of(avgAggregator, maxAggregator).toArray(Aggregator[]::new),
           null,
             CardinalityUpperBound.ONE,
             Map.of("foo", "bar")
         );
 
+        maxAggregator.preCollection();
         avgAggregator.preCollection();
         dateHistogramAggregator.preCollection();
 
