@@ -369,7 +369,7 @@ public class SchemaAwareLogDocumentBuilderImpl implements DocumentBuilder<LogMes
     addField(
         doc, LogMessage.SystemField.TIME_SINCE_EPOCH.fieldName, message.timeSinceEpochMilli, "", 0);
     addField(doc, LogMessage.ReservedField.TYPE.fieldName, message.getType(), "", 0);
-    addField(doc, LogMessage.SystemField.ID.fieldName, message.id, "", 0);
+    addField(doc, LogMessage.SystemField.ID.fieldName, message.id, "", 0);;
 
     final String msgString = JsonUtil.writeAsString(message.toWireMessage());
     addField(doc, LogMessage.SystemField.SOURCE.fieldName, msgString, "", 0);

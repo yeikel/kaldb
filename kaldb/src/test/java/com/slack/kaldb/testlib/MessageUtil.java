@@ -76,6 +76,7 @@ public class MessageUtil {
     Map<String, Object> fieldMap = new HashMap<>();
     fieldMap.put(LogMessage.ReservedField.TIMESTAMP.fieldName, timeStamp.toString());
     fieldMap.put(LogMessage.ReservedField.MESSAGE.fieldName, msgStr);
+    fieldMap.put(LogMessage.ReservedField.SERVICE_NAME.fieldName, "myservice");
     fieldMap.put(TEST_SOURCE_INT_PROPERTY, i);
     fieldMap.put(TEST_SOURCE_LONG_PROPERTY, (long) i);
     fieldMap.put(TEST_SOURCE_DOUBLE_PROPERTY, (double) i);

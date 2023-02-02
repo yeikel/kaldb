@@ -72,6 +72,8 @@ import org.opensearch.search.aggregations.bucket.histogram.DateHistogramAggregat
 import org.opensearch.search.aggregations.bucket.histogram.DateHistogramAggregatorFactory;
 import org.opensearch.search.aggregations.bucket.histogram.DateHistogramInterval;
 import org.opensearch.search.aggregations.bucket.histogram.LongBounds;
+import org.opensearch.search.aggregations.bucket.terms.MapStringTermsAggregator;
+import org.opensearch.search.aggregations.bucket.terms.TermsAggregationBuilder;
 import org.opensearch.search.aggregations.metrics.AvgAggregationBuilder;
 import org.opensearch.search.aggregations.metrics.ValueCountAggregationBuilder;
 import org.opensearch.search.aggregations.support.ValuesSourceConfig;
@@ -169,6 +171,7 @@ public class OpensearchShim {
     DateHistogramAggregatorFactory.registerAggregators(valuesSourceRegistryBuilder);
     AvgAggregationBuilder.registerAggregators(valuesSourceRegistryBuilder);
     ValueCountAggregationBuilder.registerAggregators(valuesSourceRegistryBuilder);
+    TermsAggregationBuilder.registerAggregators(valuesSourceRegistryBuilder);
 
     ValuesSourceRegistry registry = valuesSourceRegistryBuilder.build();
 
@@ -252,8 +255,8 @@ public class OpensearchShim {
     XContentBuilder mapping2 = OpensearchShim.fieldMapping("doubleproperty", b -> b.field("type", "double")); //.field("format", "epoch_millis"));
     mapperService.merge("_doc", new CompressedXContent(BytesReference.bytes(mapping2)), MapperService.MergeReason.MAPPING_UPDATE);
 
-
-
+    XContentBuilder mapping3 = OpensearchShim.fieldMapping(LogMessage.ReservedField.SERVICE_NAME.fieldName, b -> b.field("type", "keyword"));
+    mapperService.merge("_doc", new CompressedXContent(BytesReference.bytes(mapping3)), MapperService.MergeReason.MAPPING_UPDATE);
 
     IndexFieldDataService indexFieldDataService = new IndexFieldDataService(
         indexSettings,
@@ -768,7 +771,7 @@ public class OpensearchShim {
     };
 
 
-//    AvgAggregationBuilder avgAggregationBuilder = new AvgAggregationBuilder("foo").field("doubleproperty");
+    AvgAggregationBuilder avgAggregationBuilder = new AvgAggregationBuilder("foo").field("doubleproperty");
     ValueCountAggregationBuilder valueCountAggregationBuilder = new ValueCountAggregationBuilder("baz").field(LogMessage.SystemField.TIME_SINCE_EPOCH.fieldName);
 
 //    AutoDateHistogramAggregationBuilder
@@ -785,9 +788,16 @@ public class OpensearchShim {
             .setMinimumIntervalExpression("minute")
             .field(LogMessage.SystemField.TIME_SINCE_EPOCH.fieldName);
 
-//    dateHistogramAggregationBuilder.subAggregation(avgAggregationBuilder);
+    autoDateHistogramAggregationBuilder.subAggregation(avgAggregationBuilder);
     autoDateHistogramAggregationBuilder.subAggregation(valueCountAggregationBuilder);
-    Aggregator aggregator = autoDateHistogramAggregationBuilder.build(queryShardContext, null)
+//    Aggregator aggregator = autoDateHistogramAggregationBuilder.build(queryShardContext, null)
+//        .create(searchContext, null, CardinalityUpperBound.ONE);
+
+    TermsAggregationBuilder termsAggregationBuilder = new TermsAggregationBuilder("bar")
+        .executionHint("map")
+        .field(LogMessage.ReservedField.SERVICE_NAME.fieldName);
+    termsAggregationBuilder.subAggregation(valueCountAggregationBuilder);
+    Aggregator aggregator = termsAggregationBuilder.build(queryShardContext, null)
         .create(searchContext, null, CardinalityUpperBound.ONE);
 
 

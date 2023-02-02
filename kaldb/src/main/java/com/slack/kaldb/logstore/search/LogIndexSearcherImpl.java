@@ -68,6 +68,7 @@ import org.opensearch.search.aggregations.InternalAggregation;
 import org.opensearch.search.aggregations.bucket.histogram.InternalAutoDateHistogram;
 import org.opensearch.search.aggregations.bucket.histogram.InternalDateHistogram;
 import org.opensearch.search.aggregations.bucket.histogram.InternalHistogram;
+import org.opensearch.search.aggregations.bucket.terms.InternalMultiTerms;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -143,7 +144,7 @@ public class LogIndexSearcherImpl implements LogIndexSearcher<LogMessage> {
       IndexSearcher searcher = searcherManager.acquire();
       try {
         List<LogMessage> results;
-        InternalAutoDateHistogram histogram = null;
+        InternalAggregation histogram = null;
 
         if (howMany > 0) {
           CollectorManager<TopFieldCollector, TopFieldDocs> topFieldCollector =
@@ -162,12 +163,12 @@ public class LogIndexSearcherImpl implements LogIndexSearcher<LogMessage> {
             results.add(buildLogMessage(searcher, hit));
           }
           if (bucketCount > 0) {
-            histogram = ((InternalAutoDateHistogram) collector[1]);
+            histogram = ((InternalAggregation) collector[1]);
           }
         } else {
           results = Collections.emptyList();
           Object[] collector = searcher.search(query, new MultiCollectorManager(OpensearchShim.getCollectorManager(bucketCount, startTimeMsEpoch, endTimeMsEpoch)));
-          histogram = ((InternalAutoDateHistogram) collector[0]);
+          histogram = ((InternalAggregation) collector[0]);
         }
 
         // todo - this is a temp test
@@ -175,25 +176,31 @@ public class LogIndexSearcherImpl implements LogIndexSearcher<LogMessage> {
         //  the query node can't handle these quite correctly - this will result in buckets that aren't quite accurate
         //  especially at the start and end
         List<HistogramBucket> buckets = FixedIntervalHistogramImpl.makeHistogram(startTimeMsEpoch, endTimeMsEpoch, bucketCount);
-        long totalCount = results.size();
-        if (histogram != null) {
-          totalCount = histogram.getBuckets().stream().collect(Collectors.summarizingLong(InternalAutoDateHistogram.Bucket::getDocCount)).getSum();
-          for (int i = 0; i < histogram.getBuckets().size(); i++) {
-            InternalAutoDateHistogram.Bucket bucket = histogram.getBuckets().get(i);
-            long key = Long.valueOf(bucket.getKeyAsString());
-            buckets.stream().forEach(histogramBucket -> {
-              if (histogramBucket.getHigh() >= key && key >= histogramBucket.getLow()) {
-                histogramBucket.increment(bucket.getDocCount());
-              }
-            });
-          }
-        }
+//        long totalCount = results.size();
+//        if (histogram != null) {
+//          totalCount = histogram.getBuckets().stream().collect(Collectors.summarizingLong(InternalAutoDateHistogram.Bucket::getDocCount)).getSum();
+//          for (int i = 0; i < histogram.getBuckets().size(); i++) {
+//            InternalAutoDateHistogram.Bucket bucket = histogram.getBuckets().get(i);
+//            long key = Long.valueOf(bucket.getKeyAsString());
+//            buckets.stream().forEach(histogramBucket -> {
+//              if (histogramBucket.getHigh() >= key && key >= histogramBucket.getLow()) {
+//                histogramBucket.increment(bucket.getDocCount());
+//              }
+//            });
+//          }
+//        }
+
+
+//        try (XContentBuilder contentBuilder = JsonXContent.contentBuilder()){
+//          contentBuilder.startObject();
+//          histogram.toXContent(contentBuilder, ToXContent.EMPTY_PARAMS);
+//        }
 
         elapsedTime.stop();
         return new SearchResult<>(
             results,
             elapsedTime.elapsed(TimeUnit.MICROSECONDS),
-            totalCount,
+            0, //totalCount,
             buckets,
             0,
             0,
