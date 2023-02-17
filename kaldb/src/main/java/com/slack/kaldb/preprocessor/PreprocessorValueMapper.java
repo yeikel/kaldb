@@ -64,7 +64,7 @@ public class PreprocessorValueMapper {
         Murron.MurronMessage murronMsg = murronMessageDeserializer.deserialize("", record);
         List<Trace.Span> spans = SpanFormatter.fromMurronMessage(murronMsg).getSpansList();
         if (outgoingBytesCounter != null) {
-          spans.forEach(span -> outgoingBytesCounter.increment(span.toByteArray().length));
+          spans.forEach(span -> outgoingBytesCounter.increment(span.getSerializedSize()));
           outgoingMessagesCounter.increment(spans.size());
         }
         return spans;
